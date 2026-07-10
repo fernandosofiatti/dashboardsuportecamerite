@@ -913,7 +913,7 @@ with aba_causa:
                     color_discrete_map=GRUPO_CORES,
                 )
                 fig.update_layout(xaxis_title="Tickets", yaxis_title="", legend_title="")
-                st.plotly_chart(grafico(fig, "Maiores Incidentes por Tags"), width="stretch")
+                st.plotly_chart(grafico(fig, "Maiores Incidentes por Causa Raiz(Tags)"), width="stretch")
             else:
                 st.info("Coluna 'tags' não disponível.")
 
