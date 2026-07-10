@@ -57,11 +57,18 @@ ORIGIN_LABELS = {
 # IDENTIDADE VISUAL
 # --------------------------------------------------------------------------
 
+# Paleta extraída direto do site camerite.com (cores computadas dos botões,
+# títulos e destaques da página, não são "chutadas").
 COLOR_SEQUENCE = [
-    "#2563EB", "#0EA5E9", "#14B8A6", "#F59E0B", "#EF4444",
-    "#8B5CF6", "#EC4899", "#84CC16", "#F97316", "#64748B",
+    "#7B48EA", "#33CCF0", "#14B8A6", "#F59E0B", "#EF4444",
+    "#A785F1", "#EC4899", "#84CC16", "#0090D9", "#64748B",
 ]
-COLOR_TEAL = "#0EA5E9"
+COLOR_TEAL = "#33CCF0"
+CAMERITE_ROXO = "#7B48EA"          # roxo principal (botões "Fale Conosco"/"Seja Franqueado")
+CAMERITE_ROXO_ESCURO = "#29184E"   # roxo-marinho escuro (cor dos títulos do site)
+CAMERITE_CIANO = "#33CCF0"         # ciano de destaque
+CAMERITE_AZUL = "#0090D9"          # azul do botão secundário "Soluções"
+CAMERITE_ESCURO = "#29184E"        # mesmo tom escuro, usado no fundo da sidebar
 
 px.defaults.template = "plotly_white"
 px.defaults.color_discrete_sequence = COLOR_SEQUENCE
@@ -75,45 +82,63 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .stApp { background-color: #F5F7FA; }
+    .stApp { background-color: #F7F4FD; }
 
     [data-testid="stSidebar"] {
-        background-color: #101828;
+        background-color: #29184E;
     }
     [data-testid="stSidebar"] * { color: #E4E7EC !important; }
+
+    /* Os campos de entrada (número, data) têm fundo claro por padrão do
+       Streamlit - sem isso, o texto digitado ficava cinza-claro em cima
+       de um fundo branco, quase ilegível. */
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] textarea {
+        color: #29184E !important;
+        background-color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"] span,
+    [data-testid="stSidebar"] [data-baseweb="select"] div {
+        color: #29184E !important;
+    }
+    [data-testid="stSidebar"] svg { fill: #29184E; }
+
     [data-testid="stSidebar"] .stButton button {
-        background-color: #2563EB; color: white !important; border: none;
+        background-color: #7B48EA; color: white !important; border: none;
         font-weight: 600;
     }
-    [data-testid="stSidebar"] .stButton button:hover { background-color: #1D4ED8; }
+    [data-testid="stSidebar"] .stButton button:hover { background-color: #5B32C4; }
 
     .app-header {
         padding: 1.25rem 1.5rem; margin-bottom: 1rem;
-        background: linear-gradient(90deg, #101828 0%, #1E3A8A 100%);
+        background: linear-gradient(90deg, #29184E 0%, #7B48EA 100%);
         border-radius: 14px; color: white;
     }
     .app-header h1 { margin: 0; font-size: 1.6rem; color: white; }
-    .app-header p { margin: 0.25rem 0 0 0; color: #CBD5E1; font-size: 0.9rem; }
+    .app-header p { margin: 0.25rem 0 0 0; color: #D3C2F8; font-size: 0.9rem; }
 
     [data-testid="stMetric"] {
-        background-color: white; border: 1px solid #E4E7EC;
+        background-color: white; border: 1px solid #E4DAF9;
         border-radius: 12px; padding: 1rem 1rem 0.75rem 1rem;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+        box-shadow: 0 1px 2px rgba(41, 24, 78, 0.08);
     }
     [data-testid="stMetricLabel"] { font-weight: 600; color: #667085; }
 
     .stTabs [data-baseweb="tab-list"] { gap: 4px; }
     .stTabs [data-baseweb="tab"] {
         background-color: white; border-radius: 8px 8px 0 0;
-        padding: 0.5rem 1rem; border: 1px solid #E4E7EC; border-bottom: none;
+        padding: 0.5rem 1rem; border: 1px solid #E4DAF9; border-bottom: none;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #2563EB !important; color: white !important;
+        background-color: #7B48EA !important; color: white !important;
     }
     .stTabs [aria-selected="true"] p { color: white !important; }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: white; border-radius: 12px; border: 1px solid #E4E7EC;
+        background-color: white; border-radius: 12px; border: 1px solid #E4DAF9;
     }
     </style>
     """,
@@ -501,7 +526,7 @@ def gauge_sla(valor, titulo):
         number={"suffix": "%", "font": {"size": 34, "color": "#1D2939"}},
         gauge={
             "axis": {"range": [0, 100], "tickcolor": "#94A3B8", "tickfont": {"size": 10}},
-            "bar": {"color": "#1E3A8A", "thickness": 0.3},
+            "bar": {"color": "#29184E", "thickness": 0.3},
             "bgcolor": "white",
             "borderwidth": 0,
             "steps": [
