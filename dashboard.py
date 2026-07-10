@@ -99,10 +99,26 @@ st.markdown(
     }
     [data-testid="stSidebar"] [data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
+        /* Sem esse respiro, o canto arredondado (border-radius) dessa caixa
+           corta visualmente a primeira letra da primeira linha de tags
+           (ex.: "Aguardando" aparecia como "guardando"). */
+        padding: 4px !important;
     }
     [data-testid="stSidebar"] [data-baseweb="select"] span,
     [data-testid="stSidebar"] [data-baseweb="select"] div {
         color: #29184E !important;
+    }
+    /* As "pilulas" das tags selecionadas têm fundo roxo, não branco - nelas
+       o texto (e o "x" de remover) precisa ser branco para ler bem. Repete
+       os mesmos seletores "span"/"div" da regra acima (mesma especificidade)
+       para garantir que esta regra, vindo depois, tenha prioridade. */
+    [data-testid="stSidebar"] [data-baseweb="tag"],
+    [data-testid="stSidebar"] [data-baseweb="tag"] span,
+    [data-testid="stSidebar"] [data-baseweb="tag"] div {
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tag"] svg {
+        fill: #FFFFFF !important;
     }
     [data-testid="stSidebar"] svg { fill: #29184E; }
 
