@@ -213,15 +213,12 @@ st.markdown(
 
 
 def grafico_tendencia_semanal(df_serie, coluna_categoria, categorias_ordenadas, titulo):
-    """Mapa de calor semana x categoria (tag ou serviço).
+    """Uma linha por categoria (tag ou serviço), ao longo das semanas.
 
-    Com até 8 categorias e a maioria das semanas tendo só 1-2 categorias
-    ativas, o gráfico de barras agrupadas ficava esparso - a maioria dos
-    grupos aparecia vazia, dificultando comparar. O heatmap resolve isso:
-    tudo cabe numa grade só, cor mais forte = mais tickets, e dá pra ver
-    de cara em qual semana cada categoria concentrou chamados (mesmo
-    quando o volume de uma categoria é bem menor que o das outras, ela
-    ainda aparece com destaque proporcional na própria linha)."""
+    Semanas sem nenhum chamado daquela categoria contam como 0 (em vez de
+    ficarem sem ponto no gráfico) - assim a linha continua "inteira" ao
+    longo de todo o período, e dá pra ver a tendência de cada categoria
+    isoladamente, sem depender de comparar a altura de barras vizinhas."""
     df_serie = df_serie.copy()
     df_serie["semana_rotulo"] = df_serie["semana"].apply(rotulo_semana)
     rotulos_ordenados = (
@@ -236,31 +233,28 @@ def grafico_tendencia_semanal(df_serie, coluna_categoria, categorias_ordenadas, 
         .reindex(index=categorias_ordenadas, columns=rotulos_ordenados)
         .fillna(0)
     )
-    # Não mostra o "0" dentro das células - só teria poluído a grade, já que
-    # a cor de fundo (bem clara) já comunica "sem chamados nessa semana".
-    texto = pivot.map(lambda v: "" if v == 0 else str(int(v)))
 
-    fig = go.Figure(go.Heatmap(
-        z=pivot.values,
-        x=pivot.columns.tolist(),
-        y=pivot.index.tolist(),
-        text=texto.values,
-        texttemplate="%{text}",
-        textfont={"size": 12},
-        colorscale=[[0, "#F7F4FD"], [1, "#7B48EA"]],
-        hovertemplate="%{y} — %{x}: %{z} tickets<extra></extra>",
-        colorbar=dict(title="Tickets", thickness=14),
-        xgap=3, ygap=3,
-    ))
-    fig.update_layout(xaxis_title="", yaxis_title="")
-    # A primeira categoria da lista é a de maior volume (categorias_ordenadas
-    # já vem ordenada assim) - com o eixo invertido, ela fica em cima, que é
-    # a leitura mais natural (mais importante primeiro).
-    fig.update_yaxes(autorange="reversed")
+    fig = go.Figure()
+    for i, categoria in enumerate(categorias_ordenadas):
+        cor = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
+        fig.add_trace(go.Scatter(
+            x=rotulos_ordenados, y=pivot.loc[categoria].tolist(),
+            name=str(categoria), mode="lines+markers",
+            line=dict(color=cor, width=2), marker=dict(size=5),
+            hovertemplate="%{y} tickets<extra>" + str(categoria) + "</extra>",
+        ))
+
+    fig.update_layout(xaxis_title="", yaxis_title="Tickets", legend_title="", hovermode="x unified")
+    fig.update_xaxes(showgrid=False, type="category", categoryorder="array", categoryarray=rotulos_ordenados)
+    fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False, rangemode="tozero")
     fig = grafico(fig, titulo)
+    # Com até 8 categorias, a legenda horizontal em cima (padrão do
+    # grafico()) quebrava em várias linhas e cobria o topo do gráfico - uma
+    # legenda vertical do lado direito não tem esse problema.
     fig.update_layout(
-        margin=dict(r=70),
-        height=max(280, 70 + 34 * len(categorias_ordenadas)),
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+        margin=dict(r=180),
+        height=420,
     )
     return fig
 
