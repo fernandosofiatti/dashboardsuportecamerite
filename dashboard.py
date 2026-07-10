@@ -99,7 +99,13 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .stApp { background-color: #F7F4FD; }
+    /* ------------------------------------------------------------------
+       Visual inspirado no Qlik Sense: fundo neutro cinza-claro (em vez do
+       roxo-claro anterior), cards brancos "achatados" com sombra sutil,
+       KPIs com uma barra colorida no topo (como os cards "NET SALES",
+       "QUANTITY" etc do Qlik) e títulos de seção em caixa alta.
+       ------------------------------------------------------------------ */
+    .stApp { background-color: #F4F5F7; }
 
     [data-testid="stSidebar"] {
         background-color: #29184E;
@@ -131,17 +137,42 @@ st.markdown(
     .app-header {
         padding: 1.25rem 1.5rem; margin-bottom: 1rem;
         background: linear-gradient(90deg, #29184E 0%, #7B48EA 100%);
-        border-radius: 14px; color: white;
+        border-radius: 10px; color: white;
+        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12);
     }
     .app-header h1 { margin: 0; font-size: 1.6rem; color: white; }
     .app-header p { margin: 0.25rem 0 0 0; color: #D3C2F8; font-size: 0.9rem; }
 
+    /* Cards de KPI estilo Qlik: fundo branco, borda neutra fininha, sombra
+       leve e uma faixa colorida no topo (troca de cor a cada card, igual
+       aos cartões "NET SALES / QUANTITY / BASKET SIZE..." do Qlik Sense). */
     [data-testid="stMetric"] {
-        background-color: white; border: 1px solid #E4DAF9;
-        border-radius: 12px; padding: 1rem 1rem 0.75rem 1rem;
-        box-shadow: 0 1px 2px rgba(41, 24, 78, 0.08);
+        background-color: white; border: 1px solid #E4E7EC;
+        border-top: 4px solid #7B48EA;
+        border-radius: 8px; padding: 1rem 1rem 0.75rem 1rem;
+        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
     }
-    [data-testid="stMetricLabel"] { font-weight: 600; color: #667085; }
+    [data-testid="stColumn"]:nth-of-type(6n+2) [data-testid="stMetric"] { border-top-color: #33CCF0; }
+    [data-testid="stColumn"]:nth-of-type(6n+3) [data-testid="stMetric"] { border-top-color: #14B8A6; }
+    [data-testid="stColumn"]:nth-of-type(6n+4) [data-testid="stMetric"] { border-top-color: #F59E0B; }
+    [data-testid="stColumn"]:nth-of-type(6n+5) [data-testid="stMetric"] { border-top-color: #EF4444; }
+    [data-testid="stColumn"]:nth-of-type(6n) [data-testid="stMetric"] { border-top-color: #0090D9; }
+
+    [data-testid="stMetricLabel"] {
+        font-weight: 700; color: #667085; text-transform: uppercase;
+        font-size: 0.72rem; letter-spacing: 0.04em;
+    }
+    [data-testid="stMetricValue"] { font-weight: 700; color: #1D2939; }
+
+    /* Títulos de seção (st.markdown("##### ...")) em caixa alta com uma
+       linha fina embaixo - mesma linguagem visual dos títulos de gráfico
+       do Qlik ("TRENDS", "WORLD ACTIVITY", "SALES SCENARIOS" etc.). */
+    [data-testid="stMarkdownContainer"] h5 {
+        font-weight: 700; color: #1D2939; font-size: 0.85rem;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        border-bottom: 2px solid #EEF0F3; padding-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
 
     /* Streamlit atual renderiza cada aba como [data-testid="stTab"] (não mais
        [data-baseweb="tab"]) - sem essa largura em "max-content", a caixa
@@ -151,20 +182,29 @@ st.markdown(
         overflow: visible !important; gap: 4px; flex-wrap: wrap;
     }
     .stTabs [data-testid="stTab"] {
-        background-color: white; border-radius: 8px 8px 0 0;
-        padding: 0.5rem 1rem; border: 1px solid #E4DAF9; border-bottom: none;
+        background-color: transparent; border-radius: 0;
+        padding: 0.5rem 0.9rem; border: none; border-bottom: 3px solid transparent;
         width: max-content !important; min-width: max-content !important;
         white-space: nowrap !important; overflow: visible !important;
         flex: 0 0 auto !important;
     }
-    .stTabs [data-testid="stTab"] p { white-space: nowrap !important; }
-    .stTabs [data-testid="stTab"][aria-selected="true"] {
-        background-color: #7B48EA !important; color: white !important;
+    .stTabs [data-testid="stTab"] p {
+        white-space: nowrap !important; font-weight: 600; color: #667085;
     }
-    .stTabs [data-testid="stTab"][aria-selected="true"] p { color: white !important; }
+    /* Aba selecionada no estilo Qlik: sem "bloco" preenchido, só um
+       indicador colorido embaixo do texto (como a aba ativa nas telas do
+       Qlik Sense, que também não usa preenchimento sólido). */
+    .stTabs [data-testid="stTab"][aria-selected="true"] {
+        background-color: transparent !important;
+        border-bottom: 3px solid #7B48EA !important;
+    }
+    .stTabs [data-testid="stTab"][aria-selected="true"] p { color: #29184E !important; }
 
+    /* Cards que envolvem cada gráfico - também mais "achatados" e com
+       sombra leve em vez de borda roxa, igual aos painéis do Qlik. */
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: white; border-radius: 12px; border: 1px solid #E4DAF9;
+        background-color: white; border-radius: 8px; border: 1px solid #E4E7EC;
+        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
     }
     </style>
     """,
