@@ -1,0 +1,17 @@
+# Força o tema claro do Streamlit, com as cores da Camerite.
+#
+# Sem isso, se o navegador/sistema do usuário estiver no modo escuro, o
+# Streamlit troca automaticamente para o tema dark embutido dele - só que
+# nosso CSS customizado (dashboard.py) foi feito em cima do tema claro, então
+# a combinação dos dois bagunçava a página inteira (fundo escuro brigando com
+# texto escuro, cards invisíveis, etc.).
+#
+# Definir esse bloco [theme] faz o app sempre carregar no claro, independente
+# da preferência do sistema operacional/navegador de quem está acessando.
+[theme]
+base = "light"
+primaryColor = "#7B48EA"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F4FD"
+textColor = "#29184E"
+font = "sans serif"
