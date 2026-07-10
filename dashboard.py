@@ -127,10 +127,15 @@ st.markdown(
     }
     [data-testid="stMetricLabel"] { font-weight: 600; color: #667085; }
 
-    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 4px; overflow: visible; }
     .stTabs [data-baseweb="tab"] {
         background-color: white; border-radius: 8px 8px 0 0;
         padding: 0.5rem 1rem; border: 1px solid #E4DAF9; border-bottom: none;
+        width: auto !important; min-width: max-content !important;
+        white-space: nowrap !important; overflow: visible !important;
+    }
+    .stTabs [data-baseweb="tab"] > div {
+        width: auto !important; white-space: nowrap !important;
     }
     .stTabs [aria-selected="true"] {
         background-color: #7B48EA !important; color: white !important;
