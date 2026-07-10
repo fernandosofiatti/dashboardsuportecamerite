@@ -200,22 +200,39 @@ def upsert_tickets(df: pd.DataFrame) -> int:
     col_names = [name for name, _ in COLUMNS if name in df.columns]
     df = df[col_names]
 
+    # Um único INSERT com várias linhas + ON CONFLICT falha com
+    # "ON CONFLICT DO UPDATE command cannot affect row a second time" se o
+    # MESMO id aparecer duas vezes dentro do próprio lote (pode acontecer se
+    # a extração do Movidesk trouxer o mesmo ticket em duas páginas, por
+    # exemplo). Por isso removemos duplicatas de id no lote antes de gravar,
+    # mantendo a última ocorrência (mais recente).
+    if "id" in df.columns:
+        df = df.drop_duplicates(subset=["id"], keep="last")
+
     records = [
         {col: _to_pyval(v) for col, v in zip(col_names, row)}
         for row in df.itertuples(index=False, name=None)
     ]
 
     update_cols = [c for c in col_names if c != "id"]
-    stmt = pg_insert(table).values(records)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["id"],
-        set_={c: stmt.excluded[c] for c in update_cols},
-    )
 
+    # Grava em lotes para evitar um único INSERT gigantesco (e para que, se
+    # algum lote específico falhar, os demais já gravados não sejam
+    # descartados).
+    TAMANHO_LOTE = 500
+    total_gravado = 0
     with get_engine().begin() as conn:
-        conn.execute(stmt)
+        for inicio in range(0, len(records), TAMANHO_LOTE):
+            lote = records[inicio:inicio + TAMANHO_LOTE]
+            stmt = pg_insert(table).values(lote)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_={c: stmt.excluded[c] for c in update_cols},
+            )
+            conn.execute(stmt)
+            total_gravado += len(lote)
 
-    return len(records)
+    return total_gravado
 
 
 def read_tickets() -> pd.DataFrame:
