@@ -623,7 +623,7 @@ with aba_geral:
                 .sort_values("qtd", ascending=False).head(10)
             )
             fig = grafico_rosca(
-                contagem["categoria"].tolist(), contagem["qtd"].tolist(), "Top 10 categorias",
+                contagem["categoria"].tolist(), contagem["qtd"].tolist(), "Tickets por Categoria",
             )
             st.plotly_chart(fig, width="stretch")
     with c6:
@@ -913,7 +913,7 @@ with aba_causa:
                     color_discrete_map=GRUPO_CORES,
                 )
                 fig.update_layout(xaxis_title="Tickets", yaxis_title="", legend_title="")
-                st.plotly_chart(grafico(fig, "Top 15 causas raiz (tags)"), width="stretch")
+                st.plotly_chart(grafico(fig, "Maiores Incidentes por Tags"), width="stretch")
             else:
                 st.info("Coluna 'tags' não disponível.")
 
