@@ -99,10 +99,13 @@ st.markdown(
     }
     [data-testid="stSidebar"] [data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
-        /* Sem esse respiro, o canto arredondado (border-radius) dessa caixa
-           corta visualmente a primeira letra da primeira linha de tags
-           (ex.: "Aguardando" aparecia como "guardando"). */
-        padding: 4px !important;
+        /* O border-radius dessa caixa clipava (overflow) a primeira linha de
+           tags, cortando a primeira letra (ex.: "Aguardando" virava
+           "guardando"). "overflow: visible" resolve isso de vez, independente
+           de padding - o scroll vertical da lista continua funcionando
+           porque ele é controlado por um elemento filho, não este. */
+        padding: 8px !important;
+        overflow: visible !important;
     }
     [data-testid="stSidebar"] [data-baseweb="select"] span,
     [data-testid="stSidebar"] [data-baseweb="select"] div {
