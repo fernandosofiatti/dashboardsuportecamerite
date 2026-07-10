@@ -272,6 +272,111 @@ def grafico(fig, titulo=None):
     return fig
 
 
+def hex_para_rgba(hex_color: str, alpha: float) -> str:
+    """Converte uma cor hexadecimal (ex.: '#7B48EA') numa string rgba com a
+    transparência (alpha) informada - usado para preencher a área abaixo das
+    linhas dos gráficos de área com uma versão mais clara da cor da linha."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def grafico_pizza_3d(labels, values, titulo, altura=0.35):
+    """Gráfico de pizza 3D "de verdade" (não é um tipo de gráfico nativo do
+    Plotly - cada fatia é construída manualmente como uma cunha/prisma em 3D
+    usando Mesh3d, com uma altura de extrusão, formando uma pizza que pode
+    ser girada com o mouse). Cada fatia vira um "trace" Mesh3d separado, com
+    sua própria cor e um item de legenda com o percentual.
+
+    Aviso: gráficos de pizza/rosca em 3D são conhecidos por distorcer a
+    percepção das proporções (a perspectiva faz fatias parecerem maiores ou
+    menores do que realmente são) - por isso o Plotly não oferece isso nativa
+    e diretamente. Aqui optamos por atender ao pedido mesmo assim."""
+    total = sum(values)
+    n_pontos_arco = 24  # pontos por fatia, para a borda curva ficar arredondada
+
+    fig = go.Figure()
+    angulo_atual = 0.0
+    for i, (label, valor) in enumerate(zip(labels, values)):
+        fracao = (valor / total) if total else 0
+        angulo_fim = angulo_atual + fracao * 2 * np.pi
+
+        angulos = np.linspace(angulo_atual, angulo_fim, n_pontos_arco)
+        arco_x = np.cos(angulos)
+        arco_y = np.sin(angulos)
+
+        # Vértices: 0 = centro do topo, 1 = centro da base, depois os pontos
+        # do arco no topo e, na sequência, os mesmos pontos na base.
+        x = [0, 0] + list(arco_x) + list(arco_x)
+        y = [0, 0] + list(arco_y) + list(arco_y)
+        z = [altura, 0] + [altura] * n_pontos_arco + [0] * n_pontos_arco
+
+        centro_topo, centro_base = 0, 1
+        arco_topo = list(range(2, 2 + n_pontos_arco))
+        arco_base = list(range(2 + n_pontos_arco, 2 + 2 * n_pontos_arco))
+
+        i_faces, j_faces, k_faces = [], [], []
+
+        # Face de cima (leque de triângulos a partir do centro do topo)
+        for p in range(n_pontos_arco - 1):
+            i_faces.append(centro_topo)
+            j_faces.append(arco_topo[p])
+            k_faces.append(arco_topo[p + 1])
+
+        # Face de baixo (leque a partir do centro da base, ordem invertida)
+        for p in range(n_pontos_arco - 1):
+            i_faces.append(centro_base)
+            j_faces.append(arco_base[p + 1])
+            k_faces.append(arco_base[p])
+
+        # Face lateral curva (2 triângulos por segmento do arco, sempre
+        # cortando o mesmo "quadrado" pela mesma diagonal para não deixar
+        # buracos nem sobrepor triângulos)
+        for p in range(n_pontos_arco - 1):
+            i_faces.append(arco_topo[p])
+            j_faces.append(arco_base[p])
+            k_faces.append(arco_base[p + 1])
+            i_faces.append(arco_topo[p])
+            j_faces.append(arco_base[p + 1])
+            k_faces.append(arco_topo[p + 1])
+
+        # Duas faces retas de "corte" (início e fim da fatia), cada uma
+        # também dividida em 2 triângulos pela mesma diagonal.
+        for extremidade in (0, -1):
+            i_faces.append(centro_topo)
+            j_faces.append(arco_topo[extremidade])
+            k_faces.append(arco_base[extremidade])
+            i_faces.append(centro_topo)
+            j_faces.append(arco_base[extremidade])
+            k_faces.append(centro_base)
+
+        cor = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
+        pct = fracao * 100
+        fig.add_trace(go.Mesh3d(
+            x=x, y=y, z=z, i=i_faces, j=j_faces, k=k_faces,
+            color=cor, opacity=1, flatshading=True,
+            name=f"{label} ({pct:.0f}%)", showlegend=True,
+            hovertemplate=f"{label}: {valor} tickets ({pct:.0f}%)<extra></extra>",
+        ))
+
+        angulo_atual = angulo_fim
+
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
+            aspectmode="data",
+            camera=dict(eye=dict(x=1.3, y=1.3, z=1.0)),
+        ),
+        margin=dict(l=0, r=0, t=40 if titulo else 0, b=0),
+        title=titulo,
+        font=dict(family="Segoe UI, Arial", size=13, color="#1D2939"),
+        paper_bgcolor="white",
+        legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5),
+        height=440,
+    )
+    return fig
+
+
 PRAZO_CORES = {
     "No prazo": "#14B8A6", "Dentro do prazo": "#14B8A6",
     "Fora do prazo": "#EF4444", "Estourado": "#EF4444",
@@ -544,9 +649,9 @@ with aba_geral:
             st.plotly_chart(grafico(fig, "Tickets por status"), width="stretch")
     with c2:
         if "urgencia" in dff.columns:
-            contagem = dff.groupby("urgencia").size().reset_index(name="qtd")
-            fig = px.pie(contagem, names="urgencia", values="qtd", hole=0.55)
-            fig.update_traces(textinfo="percent+label")
+            contagem = dff.groupby("urgencia").size().reset_index(name="qtd").sort_values("qtd", ascending=False)
+            fig = px.bar(contagem, x="urgencia", y="qtd", text="qtd", color="urgencia")
+            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Tickets")
             st.plotly_chart(grafico(fig, "Tickets por urgência"), width="stretch")
 
     c3, c4 = st.columns(2)
@@ -556,9 +661,13 @@ with aba_geral:
                 dff.groupby("servico_nivel1").size().reset_index(name="qtd")
                 .sort_values("qtd", ascending=False).head(15)
             )
-            fig = px.bar(contagem, x="qtd", y="servico_nivel1", orientation="h", text="qtd")
-            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
-            fig.update_traces(marker_color=COLOR_SEQUENCE[2])
+            fig = px.area(contagem, x="servico_nivel1", y="qtd")
+            fig.update_traces(
+                line_color=COLOR_SEQUENCE[2], fillcolor=hex_para_rgba(COLOR_SEQUENCE[2], 0.25),
+                mode="lines+markers",
+            )
+            fig.update_layout(xaxis_title="", yaxis_title="Tickets")
+            fig.update_xaxes(categoryorder="array", categoryarray=contagem["servico_nivel1"].tolist(), tickangle=-35)
             st.plotly_chart(grafico(fig, "Tickets por serviço (nível 1)"), width="stretch")
         else:
             st.info("Sem dados de serviço (nível 1) para os filtros atuais.")
@@ -568,9 +677,13 @@ with aba_geral:
                 dff.groupby("servico_nivel2").size().reset_index(name="qtd")
                 .sort_values("qtd", ascending=False).head(15)
             )
-            fig = px.bar(contagem, x="qtd", y="servico_nivel2", orientation="h", text="qtd")
-            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
-            fig.update_traces(marker_color=COLOR_SEQUENCE[8])
+            fig = px.area(contagem, x="servico_nivel2", y="qtd")
+            fig.update_traces(
+                line_color=COLOR_SEQUENCE[8], fillcolor=hex_para_rgba(COLOR_SEQUENCE[8], 0.25),
+                mode="lines+markers",
+            )
+            fig.update_layout(xaxis_title="", yaxis_title="Tickets")
+            fig.update_xaxes(categoryorder="array", categoryarray=contagem["servico_nivel2"].tolist(), tickangle=-35)
             st.plotly_chart(grafico(fig, "Tickets por serviço (nível 2)"), width="stretch")
         else:
             st.info("Sem dados de serviço (nível 2) para os filtros atuais.")
@@ -578,21 +691,22 @@ with aba_geral:
     c5, c6 = st.columns(2)
     with c5:
         if "categoria" in dff.columns:
+            # Limitado a 10 fatias (em vez das 15 do gráfico de barras
+            # anterior) - pizza/rosca com muitas fatias finas fica ilegível,
+            # ainda mais em 3D, onde a perspectiva já distorce a leitura.
             contagem = (
                 dff.groupby("categoria").size().reset_index(name="qtd")
-                .sort_values("qtd", ascending=False).head(15)
+                .sort_values("qtd", ascending=False).head(10)
             )
-            fig = px.bar(contagem, x="qtd", y="categoria", orientation="h", text="qtd")
-            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
-            fig.update_traces(marker_color=COLOR_SEQUENCE[0])
-            st.plotly_chart(grafico(fig, "Top 15 categorias"), width="stretch")
+            fig = grafico_pizza_3d(contagem["categoria"].tolist(), contagem["qtd"].tolist(), "Top 10 categorias")
+            st.plotly_chart(fig, width="stretch")
     with c6:
         if "origem_nome" in dff.columns:
             contagem = dff.groupby("origem_nome").size().reset_index(name="qtd").sort_values("qtd", ascending=False)
-            fig = px.bar(contagem, x="qtd", y="origem_nome", orientation="h", text="qtd")
-            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
-            fig.update_traces(marker_color=COLOR_SEQUENCE[6])
-            st.plotly_chart(grafico(fig, "Tickets por canal de abertura"), width="stretch")
+            fig = grafico_pizza_3d(
+                contagem["origem_nome"].tolist(), contagem["qtd"].tolist(), "Tickets por canal de abertura",
+            )
+            st.plotly_chart(fig, width="stretch")
 
     # Evolução semanal: compara volume de tickets ABERTOS (demanda) com
     # FINALIZADOS (resolvidos ou fechados) por semana. Isso mostra se o
