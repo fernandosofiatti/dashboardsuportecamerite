@@ -281,31 +281,15 @@ def hex_para_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r}, {g}, {b}, {alpha})"
 
 
-def grafico_rosca_profundidade(labels, values, titulo, hole=0.55):
-    """Rosca (donut) 2D com efeito de profundidade: por trás da rosca colorida,
-    um disco sólido cinza-escuro (sem furo), um pouco maior e deslocado para
-    baixo/direita, simula a espessura/base de uma peça extrudada - sem
-    recorrer a um gráfico 3D de verdade (que distorce a percepção real das
-    proporções entre as fatias)."""
+def grafico_rosca(labels, values, titulo, hole=0.55):
+    """Rosca (donut) 2D simples e limpa, sem efeitos extras."""
     n = len(labels)
     cores = [COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)] for i in range(n)]
 
     fig = go.Figure()
-
-    # Sombra/base: disco sólido (sem furo), sem legenda nem hover - dá a
-    # sensação de espessura por trás da rosca principal.
-    fig.add_trace(go.Pie(
-        labels=labels, values=values, hole=0, sort=False, direction="clockwise",
-        marker=dict(colors=["rgba(15, 23, 42, 0.20)"] * n, line=dict(width=0)),
-        domain={"x": [0.035, 1.0], "y": [0.0, 0.965]},
-        textinfo="none", hoverinfo="skip", showlegend=False,
-    ))
-
-    # Rosca principal (colorida), por cima e levemente deslocada.
     fig.add_trace(go.Pie(
         labels=labels, values=values, hole=hole, sort=False, direction="clockwise",
         marker=dict(colors=cores, line=dict(color="white", width=2)),
-        domain={"x": [0.0, 0.965], "y": [0.035, 1.0]},
         textinfo="percent", textposition="inside", insidetextorientation="horizontal",
         hovertemplate="%{label}: %{value} tickets (%{percent})<extra></extra>",
     ))
@@ -638,14 +622,14 @@ with aba_geral:
                 dff.groupby("categoria").size().reset_index(name="qtd")
                 .sort_values("qtd", ascending=False).head(10)
             )
-            fig = grafico_rosca_profundidade(
+            fig = grafico_rosca(
                 contagem["categoria"].tolist(), contagem["qtd"].tolist(), "Top 10 categorias",
             )
             st.plotly_chart(fig, width="stretch")
     with c6:
         if "origem_nome" in dff.columns:
             contagem = dff.groupby("origem_nome").size().reset_index(name="qtd").sort_values("qtd", ascending=False)
-            fig = grafico_rosca_profundidade(
+            fig = grafico_rosca(
                 contagem["origem_nome"].tolist(), contagem["qtd"].tolist(), "Tickets por canal de abertura",
             )
             st.plotly_chart(fig, width="stretch")
