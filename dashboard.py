@@ -549,6 +549,51 @@ with aba_geral:
             fig.update_traces(textinfo="percent+label")
             st.plotly_chart(grafico(fig, "Tickets por urgência"), width="stretch")
 
+    c3, c4 = st.columns(2)
+    with c3:
+        if "servico_nivel1" in dff.columns and dff["servico_nivel1"].notna().any():
+            contagem = (
+                dff.groupby("servico_nivel1").size().reset_index(name="qtd")
+                .sort_values("qtd", ascending=False).head(15)
+            )
+            fig = px.bar(contagem, x="qtd", y="servico_nivel1", orientation="h", text="qtd")
+            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
+            fig.update_traces(marker_color=COLOR_SEQUENCE[2])
+            st.plotly_chart(grafico(fig, "Tickets por serviço (nível 1)"), width="stretch")
+        else:
+            st.info("Sem dados de serviço (nível 1) para os filtros atuais.")
+    with c4:
+        if "servico_nivel2" in dff.columns and dff["servico_nivel2"].notna().any():
+            contagem = (
+                dff.groupby("servico_nivel2").size().reset_index(name="qtd")
+                .sort_values("qtd", ascending=False).head(15)
+            )
+            fig = px.bar(contagem, x="qtd", y="servico_nivel2", orientation="h", text="qtd")
+            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
+            fig.update_traces(marker_color=COLOR_SEQUENCE[8])
+            st.plotly_chart(grafico(fig, "Tickets por serviço (nível 2)"), width="stretch")
+        else:
+            st.info("Sem dados de serviço (nível 2) para os filtros atuais.")
+
+    c5, c6 = st.columns(2)
+    with c5:
+        if "categoria" in dff.columns:
+            contagem = (
+                dff.groupby("categoria").size().reset_index(name="qtd")
+                .sort_values("qtd", ascending=False).head(15)
+            )
+            fig = px.bar(contagem, x="qtd", y="categoria", orientation="h", text="qtd")
+            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
+            fig.update_traces(marker_color=COLOR_SEQUENCE[0])
+            st.plotly_chart(grafico(fig, "Top 15 categorias"), width="stretch")
+    with c6:
+        if "origem_nome" in dff.columns:
+            contagem = dff.groupby("origem_nome").size().reset_index(name="qtd").sort_values("qtd", ascending=False)
+            fig = px.bar(contagem, x="qtd", y="origem_nome", orientation="h", text="qtd")
+            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
+            fig.update_traces(marker_color=COLOR_SEQUENCE[6])
+            st.plotly_chart(grafico(fig, "Tickets por canal de abertura"), width="stretch")
+
     # Evolução semanal: compara volume de tickets ABERTOS (demanda) com
     # FINALIZADOS (resolvidos ou fechados) por semana. Isso mostra se o
     # backlog está crescendo (abertos > finalizados) ou diminuindo.
@@ -607,37 +652,6 @@ with aba_geral:
         fig.update_xaxes(showgrid=False, type="category", categoryorder="array", categoryarray=rotulos_ordenados)
         fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False)
         st.plotly_chart(grafico(fig, "Evolução semanal: abertos x finalizados"), width="stretch")
-
-    c3, c4 = st.columns(2)
-    with c3:
-        if "categoria" in dff.columns:
-            contagem = (
-                dff.groupby("categoria").size().reset_index(name="qtd")
-                .sort_values("qtd", ascending=False).head(15)
-            )
-            fig = px.bar(contagem, x="qtd", y="categoria", orientation="h", text="qtd")
-            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
-            fig.update_traces(marker_color=COLOR_SEQUENCE[0])
-            st.plotly_chart(grafico(fig, "Top 15 categorias"), width="stretch")
-    with c4:
-        if "servico_nivel1" in dff.columns and dff["servico_nivel1"].notna().any():
-            contagem = (
-                dff.groupby("servico_nivel1").size().reset_index(name="qtd")
-                .sort_values("qtd", ascending=False).head(15)
-            )
-            fig = px.bar(contagem, x="qtd", y="servico_nivel1", orientation="h", text="qtd")
-            fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
-            fig.update_traces(marker_color=COLOR_SEQUENCE[2])
-            st.plotly_chart(grafico(fig, "Tickets por serviço (nível 1)"), width="stretch")
-        else:
-            st.info("Sem dados de serviço (nível 1) para os filtros atuais.")
-
-    if "origem_nome" in dff.columns:
-        contagem = dff.groupby("origem_nome").size().reset_index(name="qtd").sort_values("qtd", ascending=False)
-        fig = px.bar(contagem, x="qtd", y="origem_nome", orientation="h", text="qtd")
-        fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_title="Tickets", yaxis_title="")
-        fig.update_traces(marker_color=COLOR_SEQUENCE[6])
-        st.plotly_chart(grafico(fig, "Tickets por canal de abertura"), width="stretch")
 
 # --- Equipe ------------------------------------------------------------------
 with aba_equipe:
