@@ -426,7 +426,16 @@ with st.sidebar:
     datas_validas = df["data_abertura"].dropna()
     if not datas_validas.empty:
         min_date, max_date = datas_validas.min().date(), datas_validas.max().date()
-        date_range = st.date_input("Período de abertura", value=(min_date, max_date))
+        # Padrão sempre nos últimos 30 dias (a partir do ticket mais recente),
+        # mesmo que existam tickets mais antigos na base - o usuário ainda pode
+        # ampliar manualmente o período usando os limites min_value/max_value.
+        inicio_padrao = max(min_date, max_date - pd.Timedelta(days=29))
+        date_range = st.date_input(
+            "Período de abertura",
+            value=(inicio_padrao, max_date),
+            min_value=min_date,
+            max_value=max_date,
+        )
     else:
         date_range = None
 
