@@ -9,6 +9,15 @@ Usa o "Session pooler" do Supabase, que funciona em qualquer rede (a conexão
 direta do Supabase costuma exigir IPv6, que muitas redes residenciais/de
 empresa não têm).
 
+SOBRE O DRIVER (pg8000, não psycopg2)
+----------------------------------------
+Usamos o driver pg8000 (100% Python) em vez de psycopg2-binary. O psycopg2
+tem um bug conhecido que causa "Segmentation fault" em alguns ambientes de
+nuvem (conflito de inicialização de SSL entre o módulo ssl do Python e a
+libpq empacotada no psycopg2-binary) - isso derrubava o app no Streamlit
+Community Cloud. O pg8000 não tem esse problema por não depender de
+bibliotecas C nativas.
+
 CONFIGURAÇÃO DA SENHA (IMPORTANTE)
 ------------------------------------
 A connection string NÃO fica mais escrita no código (isso é necessário para
@@ -25,11 +34,13 @@ Configure a variável de ambiente SUPABASE_DB_URL antes de rodar:
 import os
 
 import pandas as pd
-import psycopg2
-from psycopg2.extras import execute_values
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
-SUPABASE_DB_URL = os.environ.get("SUPABASE_DB_URL")
+_RAW_SUPABASE_DB_URL = os.environ.get("SUPABASE_DB_URL")
+
+# Alias público (sem o driver pg8000 embutido) - só para exibição/diagnóstico
+# em scripts como o testar_conexao.py.
+SUPABASE_DB_URL = _RAW_SUPABASE_DB_URL
 
 TABLE_NAME = "movidesk_tickets"
 
@@ -74,7 +85,7 @@ _engine = None
 
 
 def _checar_config():
-    if not SUPABASE_DB_URL:
+    if not _RAW_SUPABASE_DB_URL:
         raise RuntimeError(
             "SUPABASE_DB_URL não configurada. Defina essa variável de ambiente "
             "(localmente via .streamlit/secrets.toml, ou em produção nos "
@@ -82,33 +93,38 @@ def _checar_config():
         )
 
 
+def _url_com_driver_pg8000(url: str) -> str:
+    """Reescreve a connection string para usar explicitamente o driver
+    pg8000 (postgresql+pg8000://...), independente de como o usuário
+    colou a URL original (postgresql:// ou postgres://)."""
+    if url.startswith("postgresql+"):
+        return url
+    if url.startswith("postgresql://"):
+        return "postgresql+pg8000://" + url[len("postgresql://"):]
+    if url.startswith("postgres://"):
+        return "postgresql+pg8000://" + url[len("postgres://"):]
+    return url
+
+
 def get_engine():
-    """Engine SQLAlchemy, usado só para leitura (pd.read_sql_query)."""
+    """Engine SQLAlchemy (driver pg8000), compartilhado por leitura e escrita."""
     global _engine
     if _engine is None:
         _checar_config()
-        _engine = create_engine(SUPABASE_DB_URL, pool_pre_ping=True)
+        _engine = create_engine(_url_com_driver_pg8000(_RAW_SUPABASE_DB_URL), pool_pre_ping=True)
     return _engine
-
-
-def get_connection():
-    """Conexão psycopg2 "crua", usada para criar tabela e gravar dados."""
-    _checar_config()
-    return psycopg2.connect(SUPABASE_DB_URL)
 
 
 def ensure_table():
     cols_sql = ",\n    ".join(f'"{name}" {tipo}' for name, tipo in COLUMNS)
     create_sql = f'CREATE TABLE IF NOT EXISTS {TABLE_NAME} (\n    {cols_sql}\n);'
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(create_sql)
-        conn.commit()
+    with get_engine().begin() as conn:
+        conn.execute(text(create_sql))
 
 
 def _to_pyval(v):
     """Converte valores do pandas/numpy para tipos nativos do Python,
-    que é o que o psycopg2 sabe gravar no Postgres."""
+    que é o que o driver do banco sabe gravar no Postgres."""
     if v is None:
         return None
     try:
@@ -135,23 +151,22 @@ def upsert_tickets(df: pd.DataFrame) -> int:
     df = df[col_names]
 
     records = [
-        tuple(_to_pyval(v) for v in row)
+        {col: _to_pyval(v) for col, v in zip(col_names, row)}
         for row in df.itertuples(index=False, name=None)
     ]
 
     col_list = ", ".join(f'"{c}"' for c in col_names)
+    placeholders = ", ".join(f":{c}" for c in col_names)
     update_cols = [c for c in col_names if c != "id"]
     update_clause = ", ".join(f'"{c}"=EXCLUDED."{c}"' for c in update_cols)
 
-    sql = (
-        f'INSERT INTO {TABLE_NAME} ({col_list}) VALUES %s '
+    sql = text(
+        f'INSERT INTO {TABLE_NAME} ({col_list}) VALUES ({placeholders}) '
         f'ON CONFLICT (id) DO UPDATE SET {update_clause}'
     )
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            execute_values(cur, sql, records, page_size=500)
-        conn.commit()
+    with get_engine().begin() as conn:
+        conn.execute(sql, records)
 
     return len(records)
 
@@ -169,10 +184,8 @@ def read_tickets() -> pd.DataFrame:
 
 def count_tickets() -> int:
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(f"SELECT count(*) FROM {TABLE_NAME}")
-                return cur.fetchone()[0]
+        with get_engine().connect() as conn:
+            return conn.execute(text(f"SELECT count(*) FROM {TABLE_NAME}")).scalar()
     except Exception as exc:
         print(f"[db] Aviso ao contar tickets: {exc}")
         return 0
@@ -193,11 +206,9 @@ def get_last_sync():
     "pra valer" (com traceback) se a conexão realmente estiver com problema.
     """
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(f'SELECT MAX("ultima_atualizacao") FROM {TABLE_NAME}')
-                row = cur.fetchone()
-                return row[0] if row else None
+        with get_engine().connect() as conn:
+            row = conn.execute(text(f'SELECT MAX("ultima_atualizacao") FROM {TABLE_NAME}')).fetchone()
+            return row[0] if row else None
     except Exception as exc:
         print(f"[db] Aviso ao consultar última sincronização: {exc}")
         return None

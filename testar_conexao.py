@@ -31,10 +31,10 @@ print("=" * 60)
 # --------------------------------------------------------------------------
 print("\n[1/5] Verificando bibliotecas instaladas...")
 try:
-    import psycopg2
+    import pg8000
     import sqlalchemy
     import pandas as pd
-    print(f"  OK - psycopg2 {psycopg2.__version__}")
+    print(f"  OK - pg8000 {pg8000.__version__}")
     print(f"  OK - sqlalchemy {sqlalchemy.__version__}")
     print(f"  OK - pandas {pd.__version__}")
 except ImportError as exc:
@@ -51,6 +51,10 @@ try:
     print(f"  OK - Tabela configurada: {db.TABLE_NAME}")
     # Mostra a connection string escondendo a senha
     url = db.SUPABASE_DB_URL
+    if not url:
+        print("  ATENÇÃO - variável de ambiente SUPABASE_DB_URL não está configurada.")
+        print("  Configure em .streamlit/secrets.toml (veja .streamlit/secrets.toml.example) e tente de novo.")
+        sys.exit(1)
     if "@" in url:
         head, tail = url.split("@", 1)
         if ":" in head:
@@ -70,7 +74,8 @@ except Exception as exc:
 # --------------------------------------------------------------------------
 print("\n[3/5] Tentando conectar no banco...")
 try:
-    conn = db.get_connection()
+    with db.get_engine().connect() as conn:
+        pass
     print("  OK - conexão aberta com sucesso!")
 except Exception:
     print("  FALHOU ao conectar. Erro completo abaixo:\n")
@@ -163,10 +168,12 @@ except Exception:
 # achar que já está tudo sincronizado).
 # --------------------------------------------------------------------------
 try:
-    with db.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(f'DELETE FROM {db.TABLE_NAME} WHERE id = %s', ("TESTE-CONEXAO-999999",))
-        conn.commit()
+    from sqlalchemy import text
+    with db.get_engine().begin() as conn:
+        conn.execute(
+            text(f'DELETE FROM {db.TABLE_NAME} WHERE id = :id'),
+            {"id": "TESTE-CONEXAO-999999"},
+        )
     print("  OK - registro de teste removido da tabela (limpeza automática).")
 except Exception as exc:
     print(f"  ATENÇÃO - não consegui remover o registro de teste automaticamente: {exc}")
