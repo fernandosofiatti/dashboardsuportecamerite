@@ -73,6 +73,23 @@ CAMERITE_ESCURO = "#29184E"        # mesmo tom escuro, usado no fundo da sidebar
 px.defaults.template = "plotly_white"
 px.defaults.color_discrete_sequence = COLOR_SEQUENCE
 
+MESES_PT_ABREV = [
+    "", "jan", "fev", "mar", "abr", "mai", "jun",
+    "jul", "ago", "set", "out", "nov", "dez",
+]
+
+
+def rotulo_semana(inicio: pd.Timestamp) -> str:
+    """Formata o início de uma semana (segunda-feira) como "D a D mês",
+    ex.: "6 a 12 jun" - mostra o intervalo de dias em vez de só uma data
+    solta, que era difícil de interpretar no eixo/legenda dos gráficos
+    semanais. Se a semana cruzar a virada do mês, mostra os dois:
+    "29 mai a 4 jun"."""
+    fim = inicio + pd.Timedelta(days=6)
+    if inicio.month == fim.month:
+        return f"{inicio.day} a {fim.day} {MESES_PT_ABREV[inicio.month]}"
+    return f"{inicio.day} {MESES_PT_ABREV[inicio.month]} a {fim.day} {MESES_PT_ABREV[fim.month]}"
+
 st.set_page_config(
     page_title="Dashboard de Suporte - Movidesk",
     page_icon="📊",
@@ -164,9 +181,21 @@ def grafico_tendencia_semanal(df_serie, coluna_categoria, categorias_ordenadas, 
     cor_por_categoria = {
         cat: COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)] for i, cat in enumerate(categorias_ordenadas)
     }
+
+    # Mostra o intervalo de dias da semana (ex.: "6 a 12 jun") em vez de só
+    # a data de início - fica mais fácil de entender no eixo do gráfico.
+    df_serie = df_serie.copy()
+    df_serie["semana_rotulo"] = df_serie["semana"].apply(rotulo_semana)
+    rotulos_ordenados = (
+        df_serie[["semana", "semana_rotulo"]]
+        .drop_duplicates()
+        .sort_values("semana")["semana_rotulo"]
+        .tolist()
+    )
+
     fig = px.bar(
-        df_serie, x="semana", y="qtd", color=coluna_categoria,
-        category_orders={coluna_categoria: categorias_ordenadas},
+        df_serie, x="semana_rotulo", y="qtd", color=coluna_categoria,
+        category_orders={coluna_categoria: categorias_ordenadas, "semana_rotulo": rotulos_ordenados},
         color_discrete_map=cor_por_categoria,
         barmode="group",
     )
@@ -486,29 +515,44 @@ with aba_geral:
         if tem_resolucao:
             data_final = dff["data_resolucao"] if data_final is None else data_final.fillna(dff["data_resolucao"])
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=abertos_semana["semana"], y=abertos_semana["qtd"], name="Abertos",
-            mode="lines+markers", line=dict(color="#EF4444", width=2.5),
-            fill="tozeroy", fillcolor="rgba(239, 68, 68, 0.15)",
-            hovertemplate="%{y} tickets<extra>Abertos</extra>",
-        ))
-
+        finalizados_semana = None
         if data_final is not None and data_final.notna().any():
             serie_fin = dff.copy()
             serie_fin["data_finalizacao"] = data_final
             serie_fin = serie_fin.dropna(subset=["data_finalizacao"])
             serie_fin["semana"] = serie_fin["data_finalizacao"].dt.to_period("W").apply(lambda p: p.start_time)
             finalizados_semana = serie_fin.groupby("semana").size().reset_index(name="qtd")
+
+        # Mesmo tratamento de rótulo "D a D mês" usado no gráfico de tendência
+        # semanal (tags/serviço), para manter a leitura consistente entre os
+        # gráficos e garantir a ordem cronológica correta no eixo.
+        todas_semanas = pd.concat([
+            abertos_semana["semana"],
+            finalizados_semana["semana"] if finalizados_semana is not None else pd.Series(dtype="datetime64[ns]"),
+        ]).drop_duplicates().sort_values()
+        rotulos_ordenados = [rotulo_semana(s) for s in todas_semanas]
+
+        abertos_semana["semana_rotulo"] = abertos_semana["semana"].apply(rotulo_semana)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=abertos_semana["semana_rotulo"], y=abertos_semana["qtd"], name="Abertos",
+            mode="lines+markers", line=dict(color="#EF4444", width=2.5),
+            fill="tozeroy", fillcolor="rgba(239, 68, 68, 0.15)",
+            hovertemplate="%{y} tickets<extra>Abertos</extra>",
+        ))
+
+        if finalizados_semana is not None:
+            finalizados_semana["semana_rotulo"] = finalizados_semana["semana"].apply(rotulo_semana)
             fig.add_trace(go.Scatter(
-                x=finalizados_semana["semana"], y=finalizados_semana["qtd"], name="Finalizados",
+                x=finalizados_semana["semana_rotulo"], y=finalizados_semana["qtd"], name="Finalizados",
                 mode="lines+markers", line=dict(color="#14B8A6", width=2.5),
                 fill="tozeroy", fillcolor="rgba(20, 184, 166, 0.15)",
                 hovertemplate="%{y} tickets<extra>Finalizados</extra>",
             ))
 
         fig.update_layout(xaxis_title="", yaxis_title="Tickets", legend_title="", hovermode="x unified")
-        fig.update_xaxes(showgrid=False)
+        fig.update_xaxes(showgrid=False, type="category", categoryorder="array", categoryarray=rotulos_ordenados)
         fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False)
         st.plotly_chart(grafico(fig, "Evolução semanal: abertos x finalizados"), width="stretch")
 
