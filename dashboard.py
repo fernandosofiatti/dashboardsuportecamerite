@@ -155,36 +155,36 @@ st.markdown(
 )
 
 
-def hex_para_rgba(hex_color: str, alpha: float) -> str:
-    """Converte "#RRGGBB" para "rgba(r,g,b,alpha)" - usado para preencher as
-    áreas dos gráficos de tendência com transparência."""
-    h = hex_color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return f"rgba({r},{g},{b},{alpha})"
-
-
 def grafico_tendencia_semanal(df_serie, coluna_categoria, categorias_ordenadas, titulo):
-    """Gráfico de área com uma linha por categoria (tag ou serviço), SEM
-    empilhar (cada área começa do zero e é semi-transparente). Usamos essa
-    abordagem em vez do px.area(color=...) padrão porque o px.area empilha
-    as áreas por padrão - a altura visual de cada faixa vira uma soma
-    acumulada, que não bate com o valor mostrado ao passar o mouse (que é o
-    valor individual daquela categoria). Sem empilhar, altura da área e
-    valor do hover são sempre a mesma coisa."""
-    fig = go.Figure()
-    for i, cat in enumerate(categorias_ordenadas):
-        cor = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
-        serie_cat = df_serie[df_serie[coluna_categoria] == cat].sort_values("semana")
-        fig.add_trace(go.Scatter(
-            x=serie_cat["semana"], y=serie_cat["qtd"], name=str(cat),
-            mode="lines+markers", line=dict(color=cor, width=2),
-            fill="tozeroy", fillcolor=hex_para_rgba(cor, 0.18),
-            hovertemplate="%{y} tickets<extra>%{fullData.name}</extra>",
-        ))
+    """Gráfico de colunas (barras verticais) com uma cor por categoria (tag
+    ou serviço), agrupadas lado a lado por semana (barmode="group") - cada
+    barra já mostra o valor individual daquela categoria naquela semana, sem
+    o risco de "empilhar e não bater com o hover" que tínhamos na versão em
+    área."""
+    cor_por_categoria = {
+        cat: COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)] for i, cat in enumerate(categorias_ordenadas)
+    }
+    fig = px.bar(
+        df_serie, x="semana", y="qtd", color=coluna_categoria,
+        category_orders={coluna_categoria: categorias_ordenadas},
+        color_discrete_map=cor_por_categoria,
+        barmode="group",
+    )
+    fig.update_traces(hovertemplate="%{y} tickets<extra>%{fullData.name}</extra>")
     fig.update_layout(xaxis_title="", yaxis_title="Tickets", legend_title="", hovermode="x unified")
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False)
-    return grafico(fig, titulo)
+    fig = grafico(fig, titulo)
+    # Com até 8 categorias (às vezes com nomes longos), a legenda horizontal
+    # em cima (padrão do grafico()) quebrava em várias linhas e cobria o
+    # topo do gráfico. Uma legenda vertical do lado direito não tem esse
+    # problema, não importa quantos itens ou quão longos sejam os nomes.
+    fig.update_layout(
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+        margin=dict(r=180),
+        height=420,
+    )
+    return fig
 
 
 def grafico(fig, titulo=None):
