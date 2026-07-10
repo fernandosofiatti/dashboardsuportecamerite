@@ -281,99 +281,40 @@ def hex_para_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r}, {g}, {b}, {alpha})"
 
 
-def grafico_pizza_3d(labels, values, titulo, altura=0.35):
-    """Gráfico de pizza 3D "de verdade" (não é um tipo de gráfico nativo do
-    Plotly - cada fatia é construída manualmente como uma cunha/prisma em 3D
-    usando Mesh3d, com uma altura de extrusão, formando uma pizza que pode
-    ser girada com o mouse). Cada fatia vira um "trace" Mesh3d separado, com
-    sua própria cor e um item de legenda com o percentual.
-
-    Aviso: gráficos de pizza/rosca em 3D são conhecidos por distorcer a
-    percepção das proporções (a perspectiva faz fatias parecerem maiores ou
-    menores do que realmente são) - por isso o Plotly não oferece isso nativa
-    e diretamente. Aqui optamos por atender ao pedido mesmo assim."""
-    total = sum(values)
-    n_pontos_arco = 24  # pontos por fatia, para a borda curva ficar arredondada
+def grafico_rosca_profundidade(labels, values, titulo, hole=0.55):
+    """Rosca (donut) 2D com efeito de profundidade: por trás da rosca colorida,
+    um disco sólido cinza-escuro (sem furo), um pouco maior e deslocado para
+    baixo/direita, simula a espessura/base de uma peça extrudada - sem
+    recorrer a um gráfico 3D de verdade (que distorce a percepção real das
+    proporções entre as fatias)."""
+    n = len(labels)
+    cores = [COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)] for i in range(n)]
 
     fig = go.Figure()
-    angulo_atual = 0.0
-    for i, (label, valor) in enumerate(zip(labels, values)):
-        fracao = (valor / total) if total else 0
-        angulo_fim = angulo_atual + fracao * 2 * np.pi
 
-        angulos = np.linspace(angulo_atual, angulo_fim, n_pontos_arco)
-        arco_x = np.cos(angulos)
-        arco_y = np.sin(angulos)
+    # Sombra/base: disco sólido (sem furo), sem legenda nem hover - dá a
+    # sensação de espessura por trás da rosca principal.
+    fig.add_trace(go.Pie(
+        labels=labels, values=values, hole=0, sort=False, direction="clockwise",
+        marker=dict(colors=["rgba(15, 23, 42, 0.20)"] * n, line=dict(width=0)),
+        domain={"x": [0.035, 1.0], "y": [0.0, 0.965]},
+        textinfo="none", hoverinfo="skip", showlegend=False,
+    ))
 
-        # Vértices: 0 = centro do topo, 1 = centro da base, depois os pontos
-        # do arco no topo e, na sequência, os mesmos pontos na base.
-        x = [0, 0] + list(arco_x) + list(arco_x)
-        y = [0, 0] + list(arco_y) + list(arco_y)
-        z = [altura, 0] + [altura] * n_pontos_arco + [0] * n_pontos_arco
-
-        centro_topo, centro_base = 0, 1
-        arco_topo = list(range(2, 2 + n_pontos_arco))
-        arco_base = list(range(2 + n_pontos_arco, 2 + 2 * n_pontos_arco))
-
-        i_faces, j_faces, k_faces = [], [], []
-
-        # Face de cima (leque de triângulos a partir do centro do topo)
-        for p in range(n_pontos_arco - 1):
-            i_faces.append(centro_topo)
-            j_faces.append(arco_topo[p])
-            k_faces.append(arco_topo[p + 1])
-
-        # Face de baixo (leque a partir do centro da base, ordem invertida)
-        for p in range(n_pontos_arco - 1):
-            i_faces.append(centro_base)
-            j_faces.append(arco_base[p + 1])
-            k_faces.append(arco_base[p])
-
-        # Face lateral curva (2 triângulos por segmento do arco, sempre
-        # cortando o mesmo "quadrado" pela mesma diagonal para não deixar
-        # buracos nem sobrepor triângulos)
-        for p in range(n_pontos_arco - 1):
-            i_faces.append(arco_topo[p])
-            j_faces.append(arco_base[p])
-            k_faces.append(arco_base[p + 1])
-            i_faces.append(arco_topo[p])
-            j_faces.append(arco_base[p + 1])
-            k_faces.append(arco_topo[p + 1])
-
-        # Duas faces retas de "corte" (início e fim da fatia), cada uma
-        # também dividida em 2 triângulos pela mesma diagonal.
-        for extremidade in (0, -1):
-            i_faces.append(centro_topo)
-            j_faces.append(arco_topo[extremidade])
-            k_faces.append(arco_base[extremidade])
-            i_faces.append(centro_topo)
-            j_faces.append(arco_base[extremidade])
-            k_faces.append(centro_base)
-
-        cor = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
-        pct = fracao * 100
-        fig.add_trace(go.Mesh3d(
-            x=x, y=y, z=z, i=i_faces, j=j_faces, k=k_faces,
-            color=cor, opacity=1, flatshading=True,
-            name=f"{label} ({pct:.0f}%)", showlegend=True,
-            hovertemplate=f"{label}: {valor} tickets ({pct:.0f}%)<extra></extra>",
-        ))
-
-        angulo_atual = angulo_fim
+    # Rosca principal (colorida), por cima e levemente deslocada.
+    fig.add_trace(go.Pie(
+        labels=labels, values=values, hole=hole, sort=False, direction="clockwise",
+        marker=dict(colors=cores, line=dict(color="white", width=2)),
+        domain={"x": [0.0, 0.965], "y": [0.035, 1.0]},
+        textinfo="percent", textposition="inside", insidetextorientation="horizontal",
+        hovertemplate="%{label}: %{value} tickets (%{percent})<extra></extra>",
+    ))
 
     fig.update_layout(
-        scene=dict(
-            xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
-            aspectmode="data",
-            camera=dict(eye=dict(x=1.3, y=1.3, z=1.0)),
-        ),
-        margin=dict(l=0, r=0, t=40 if titulo else 0, b=0),
-        title=titulo,
-        font=dict(family="Segoe UI, Arial", size=13, color="#1D2939"),
-        paper_bgcolor="white",
-        legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5),
-        height=440,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
     )
+    fig = grafico(fig, titulo)
+    fig.update_layout(height=420)
     return fig
 
 
@@ -692,18 +633,19 @@ with aba_geral:
     with c5:
         if "categoria" in dff.columns:
             # Limitado a 10 fatias (em vez das 15 do gráfico de barras
-            # anterior) - pizza/rosca com muitas fatias finas fica ilegível,
-            # ainda mais em 3D, onde a perspectiva já distorce a leitura.
+            # anterior) - rosca com muitas fatias finas fica ilegível.
             contagem = (
                 dff.groupby("categoria").size().reset_index(name="qtd")
                 .sort_values("qtd", ascending=False).head(10)
             )
-            fig = grafico_pizza_3d(contagem["categoria"].tolist(), contagem["qtd"].tolist(), "Top 10 categorias")
+            fig = grafico_rosca_profundidade(
+                contagem["categoria"].tolist(), contagem["qtd"].tolist(), "Top 10 categorias",
+            )
             st.plotly_chart(fig, width="stretch")
     with c6:
         if "origem_nome" in dff.columns:
             contagem = dff.groupby("origem_nome").size().reset_index(name="qtd").sort_values("qtd", ascending=False)
-            fig = grafico_pizza_3d(
+            fig = grafico_rosca_profundidade(
                 contagem["origem_nome"].tolist(), contagem["qtd"].tolist(), "Tickets por canal de abertura",
             )
             st.plotly_chart(fig, width="stretch")
