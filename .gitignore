@@ -1,0 +1,18 @@
+# Segredos - NUNCA subir para o Git
+.streamlit/secrets.toml
+*.env
+.env
+
+# Backup local de dados (gerado automaticamente pelo extrai_movidesk.py)
+movidesk_tickets.xlsx
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Sistema
+.DS_Store
+Thumbs.db

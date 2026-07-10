@@ -1,0 +1,7 @@
+requests
+pandas>=2.2,<3.0
+openpyxl
+streamlit
+plotly
+psycopg2-binary
+sqlalchemy
