@@ -166,7 +166,14 @@ def ensure_table():
     _metadata.create_all(get_engine(), tables=[get_table()], checkfirst=True)
 
 
-def _to_pyval(v):
+# Nome da coluna -> tipo SQL "base" (sem o "PRIMARY KEY"), para saber quando
+# um valor precisa ser convertido para inteiro antes de gravar.
+_TIPO_POR_COLUNA = {
+    name: tipo.replace("PRIMARY KEY", "").strip() for name, tipo in COLUMNS
+}
+
+
+def _to_pyval(v, coluna: str = None):
     """Converte valores do pandas/numpy para tipos nativos do Python,
     que é o que o driver do banco sabe gravar no Postgres."""
     if v is None:
@@ -179,7 +186,15 @@ def _to_pyval(v):
     if isinstance(v, pd.Timestamp):
         return v.to_pydatetime()
     if hasattr(v, "item"):  # numpy int64/float64/bool_ etc.
-        return v.item()
+        v = v.item()
+
+    # Colunas com dados faltantes viram float64 no pandas (ex.: 40.0 em vez
+    # de 40) mesmo sendo conceitualmente inteiras. O Postgres não aceita
+    # ponto decimal em coluna "integer" (erro: invalid input syntax for
+    # type integer: "40.0") - então arredondamos para int nesse caso.
+    if coluna is not None and _TIPO_POR_COLUNA.get(coluna) == "integer" and isinstance(v, float):
+        v = int(round(v))
+
     return v
 
 
@@ -210,7 +225,7 @@ def upsert_tickets(df: pd.DataFrame) -> int:
         df = df.drop_duplicates(subset=["id"], keep="last")
 
     records = [
-        {col: _to_pyval(v) for col, v in zip(col_names, row)}
+        {col: _to_pyval(v, col) for col, v in zip(col_names, row)}
         for row in df.itertuples(index=False, name=None)
     ]
 
