@@ -34,7 +34,19 @@ Configure a variável de ambiente SUPABASE_DB_URL antes de rodar:
 import os
 
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    MetaData,
+    Table,
+    TIMESTAMP,
+    Text,
+    create_engine,
+    text,
+)
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 _RAW_SUPABASE_DB_URL = os.environ.get("SUPABASE_DB_URL")
 
@@ -81,6 +93,26 @@ COLUMNS = [
     ("tempo_ate_fechamento_horas", "double precision"),
 ]
 
+# Mapeia os tipos SQL (strings usadas no CREATE TABLE) para tipos do
+# SQLAlchemy Core. Isso é usado para montar um Table() tipado - com isso,
+# o SQLAlchemy manda o tipo de cada parâmetro para o driver (pg8000), em vez
+# de mandar um valor "cru" e deixar o Postgres tentar adivinhar o tipo.
+#
+# Sem isso, um upsert em lote onde uma coluna vem como None (NULL) em algum
+# registro pode disparar "ProgrammingError: could not determine data type
+# of parameter" no Postgres, porque o pg8000 não sabe dizer se aquele NULL
+# é texto, número, data etc.
+_SQL_TYPE_MAP = {
+    "text": Text,
+    "integer": Integer,
+    "boolean": Boolean,
+    "timestamp": TIMESTAMP,
+    "double precision": DOUBLE_PRECISION,
+}
+
+_metadata = MetaData()
+_table = None
+
 _engine = None
 
 
@@ -115,11 +147,23 @@ def get_engine():
     return _engine
 
 
+def get_table() -> Table:
+    """Monta (uma única vez) o objeto Table do SQLAlchemy, com o tipo de
+    cada coluna - usado tanto para criar a tabela quanto para montar o
+    upsert com os tipos corretos."""
+    global _table
+    if _table is None:
+        colunas = []
+        for name, tipo_sql in COLUMNS:
+            eh_pk = "PRIMARY KEY" in tipo_sql
+            tipo_base = tipo_sql.replace("PRIMARY KEY", "").strip()
+            colunas.append(Column(name, _SQL_TYPE_MAP[tipo_base], primary_key=eh_pk))
+        _table = Table(TABLE_NAME, _metadata, *colunas)
+    return _table
+
+
 def ensure_table():
-    cols_sql = ",\n    ".join(f'"{name}" {tipo}' for name, tipo in COLUMNS)
-    create_sql = f'CREATE TABLE IF NOT EXISTS {TABLE_NAME} (\n    {cols_sql}\n);'
-    with get_engine().begin() as conn:
-        conn.execute(text(create_sql))
+    _metadata.create_all(get_engine(), tables=[get_table()], checkfirst=True)
 
 
 def _to_pyval(v):
@@ -141,11 +185,17 @@ def _to_pyval(v):
 
 def upsert_tickets(df: pd.DataFrame) -> int:
     """Insere/atualiza os tickets no Supabase (upsert pelo campo id).
-    Retorna a quantidade de linhas enviadas."""
+    Retorna a quantidade de linhas enviadas.
+
+    Usa o construtor de INSERT do SQLAlchemy (em vez de SQL "cru" em texto)
+    justamente para que cada parâmetro vá tipado - isso evita o erro do
+    Postgres "could not determine data type of parameter" que acontecia
+    quando uma coluna vinha None (NULL) em algum ticket do lote."""
     if df is None or df.empty:
         return 0
 
     ensure_table()
+    table = get_table()
 
     col_names = [name for name, _ in COLUMNS if name in df.columns]
     df = df[col_names]
@@ -155,18 +205,15 @@ def upsert_tickets(df: pd.DataFrame) -> int:
         for row in df.itertuples(index=False, name=None)
     ]
 
-    col_list = ", ".join(f'"{c}"' for c in col_names)
-    placeholders = ", ".join(f":{c}" for c in col_names)
     update_cols = [c for c in col_names if c != "id"]
-    update_clause = ", ".join(f'"{c}"=EXCLUDED."{c}"' for c in update_cols)
-
-    sql = text(
-        f'INSERT INTO {TABLE_NAME} ({col_list}) VALUES ({placeholders}) '
-        f'ON CONFLICT (id) DO UPDATE SET {update_clause}'
+    stmt = pg_insert(table).values(records)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["id"],
+        set_={c: stmt.excluded[c] for c in update_cols},
     )
 
     with get_engine().begin() as conn:
-        conn.execute(sql, records)
+        conn.execute(stmt)
 
     return len(records)
 
