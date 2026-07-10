@@ -208,14 +208,38 @@ def _person_name(person: dict) -> str:
     return person.get("businessName") or person.get("personName") or person.get("email")
 
 
-def _first_client_name(clients) -> str:
-    if not clients or not isinstance(clients, list):
+def _organization_name(person: dict) -> str:
+    """Nome da organização/empresa vinculada a uma pessoa (solicitante),
+    quando cadastrada no Movidesk - vem como um sub-objeto "organization"
+    dentro do Person/Requester (ex.: clients[0]["organization"])."""
+    if not isinstance(person, dict):
         return None
-    first = clients[0]
-    if isinstance(first, dict):
-        c = first.get("client") or first
-        return _person_name(c)
-    return None
+    org = person.get("organization")
+    return _person_name(org) if isinstance(org, dict) else None
+
+
+def _cliente_do_ticket(t: dict) -> str:
+    """Determina o "cliente" (empresa) do ticket.
+
+    Nossa conta do Movidesk não usa formalmente o campo "clients" (lista de
+    solicitantes) com organização vinculada em todo ticket, então tentamos
+    nessa ordem, usando o primeiro que existir:
+      1. Organização do primeiro solicitante em "clients"
+         (clients[0]["organization"])
+      2. Organização de quem abriu o ticket ("createdBy")
+      3. Nome do primeiro solicitante em "clients" (pessoa, sem organização)
+
+    Se mesmo assim ficar tudo vazio, o próximo passo é rodar
+    dump_ticket_bruto.py (veja abaixo) pra inspecionar o JSON cru de alguns
+    tickets reais e confirmar como a conta do Movidesk está estruturada."""
+    clients = t.get("clients")
+    primeiro_cliente = clients[0] if isinstance(clients, list) and clients else None
+
+    org = _organization_name(primeiro_cliente) or _organization_name(t.get("createdBy"))
+    if org:
+        return org
+
+    return _person_name(primeiro_cliente) if primeiro_cliente else None
 
 
 def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
@@ -238,7 +262,7 @@ def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
             "responsavel": _person_name(t.get("owner")),
             "equipe_responsavel": t.get("ownerTeam"),
             "criado_por": _person_name(t.get("createdBy")),
-            "cliente": _first_client_name(t.get("clients")),
+            "cliente": _cliente_do_ticket(t),
             "data_abertura": t.get("createdDate"),
             "data_resolucao": t.get("resolvedIn"),
             "data_fechamento": t.get("closedIn"),
