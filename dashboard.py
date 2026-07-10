@@ -97,33 +97,13 @@ st.markdown(
         color: #29184E !important;
         background-color: #FFFFFF !important;
     }
-    [data-testid="stSidebar"] [data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        /* O border-radius dessa caixa clipava (overflow) a primeira linha de
-           tags, cortando a primeira letra (ex.: "Aguardando" virava
-           "guardando"). "overflow: visible" resolve isso de vez, independente
-           de padding - o scroll vertical da lista continua funcionando
-           porque ele é controlado por um elemento filho, não este. */
-        padding: 8px !important;
-        overflow: visible !important;
-    }
-    [data-testid="stSidebar"] [data-baseweb="select"] span,
-    [data-testid="stSidebar"] [data-baseweb="select"] div {
-        color: #29184E !important;
-    }
-    /* As "pilulas" das tags selecionadas têm fundo roxo, não branco - nelas
-       o texto (e o "x" de remover) precisa ser branco para ler bem. Repete
-       os mesmos seletores "span"/"div" da regra acima (mesma especificidade)
-       para garantir que esta regra, vindo depois, tenha prioridade. */
-    [data-testid="stSidebar"] [data-baseweb="tag"],
-    [data-testid="stSidebar"] [data-baseweb="tag"] span,
-    [data-testid="stSidebar"] [data-baseweb="tag"] div {
-        color: #FFFFFF !important;
-    }
-    [data-testid="stSidebar"] [data-baseweb="tag"] svg {
-        fill: #FFFFFF !important;
-    }
     [data-testid="stSidebar"] svg { fill: #29184E; }
+
+    /* Botões dos filtros (st.pills): deixamos sem cor forçada aqui de
+       propósito - o botão "aceso" (selecionado) já usa a primaryColor do
+       tema (definida em .streamlit/config.toml, a mesma roxa da marca),
+       e o Streamlit já escolhe automaticamente uma cor de texto legível
+       para cada estado. */
 
     [data-testid="stSidebar"] .stButton button {
         background-color: #7B48EA; color: white !important; border: none;
@@ -173,6 +153,38 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+def hex_para_rgba(hex_color: str, alpha: float) -> str:
+    """Converte "#RRGGBB" para "rgba(r,g,b,alpha)" - usado para preencher as
+    áreas dos gráficos de tendência com transparência."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def grafico_tendencia_semanal(df_serie, coluna_categoria, categorias_ordenadas, titulo):
+    """Gráfico de área com uma linha por categoria (tag ou serviço), SEM
+    empilhar (cada área começa do zero e é semi-transparente). Usamos essa
+    abordagem em vez do px.area(color=...) padrão porque o px.area empilha
+    as áreas por padrão - a altura visual de cada faixa vira uma soma
+    acumulada, que não bate com o valor mostrado ao passar o mouse (que é o
+    valor individual daquela categoria). Sem empilhar, altura da área e
+    valor do hover são sempre a mesma coisa."""
+    fig = go.Figure()
+    for i, cat in enumerate(categorias_ordenadas):
+        cor = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
+        serie_cat = df_serie[df_serie[coluna_categoria] == cat].sort_values("semana")
+        fig.add_trace(go.Scatter(
+            x=serie_cat["semana"], y=serie_cat["qtd"], name=str(cat),
+            mode="lines+markers", line=dict(color=cor, width=2),
+            fill="tozeroy", fillcolor=hex_para_rgba(cor, 0.18),
+            hovertemplate="%{y} tickets<extra>%{fullData.name}</extra>",
+        ))
+    fig.update_layout(xaxis_title="", yaxis_title="Tickets", legend_title="", hovermode="x unified")
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False)
+    return grafico(fig, titulo)
 
 
 def grafico(fig, titulo=None):
@@ -349,13 +361,20 @@ with st.sidebar:
     def multiselect_coluna(label, coluna):
         """Retorna (selecionados, opções completas). Tickets com valor em
         branco nessa coluna não aparecem na lista de opções (não dá pra
-        selecionar "vazio" num multiselect) - por isso o filtro só é
-        aplicado de fato quando o usuário tira alguma opção da seleção
-        padrão; enquanto estiver tudo selecionado, os tickets em branco
-        continuam aparecendo normalmente."""
+        selecionar "vazio" num filtro) - por isso o filtro só é aplicado de
+        fato quando o usuário tira alguma opção da seleção padrão; enquanto
+        estiver tudo selecionado, os tickets em branco continuam aparecendo
+        normalmente.
+
+        Usa st.pills (botões que acendem/apagam) em vez de st.multiselect:
+        o multiselect padrão do Streamlit tinha um bug visual de renderização
+        (a "pilula" da primeira tag selecionada aparecia cortada) que não foi
+        possível corrigir de forma confiável só com CSS."""
         opcoes = sorted(df[coluna].dropna().unique().tolist()) if coluna in df.columns else []
-        selecionados = st.multiselect(label, opcoes, default=opcoes)
-        return selecionados, opcoes
+        if not opcoes:
+            return [], []
+        selecionados = st.pills(label, opcoes, selection_mode="multi", default=opcoes)
+        return (selecionados or []), opcoes
 
     status_sel, status_opcoes = multiselect_coluna("Status", "status")
     categoria_sel, categoria_opcoes = multiselect_coluna("Categoria", "categoria")
@@ -796,20 +815,11 @@ with aba_causa:
                     tags_tempo[tags_tempo["tag"].isin(top_tags_tempo)]
                     .groupby(["semana", "tag"]).size().reset_index(name="qtd")
                 )
-                fig = px.area(
-                    serie_tags, x="semana", y="qtd", color="tag",
-                    category_orders={"tag": top_tags_tempo},
-                    line_shape="linear",
-                    color_discrete_sequence=COLOR_SEQUENCE,
+                fig = grafico_tendencia_semanal(
+                    serie_tags, "tag", top_tags_tempo,
+                    "Tendência semanal das principais causas raiz (tags)",
                 )
-                fig.update_traces(line=dict(width=2), opacity=0.85, hovertemplate="%{y} tickets<extra>%{fullData.name}</extra>")
-                fig.update_layout(
-                    xaxis_title="", yaxis_title="Tickets", legend_title="",
-                    hovermode="x unified",
-                )
-                fig.update_xaxes(showgrid=False)
-                fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False)
-                st.plotly_chart(grafico(fig, "Tendência semanal das principais causas raiz (tags)"), width="stretch")
+                st.plotly_chart(fig, width="stretch")
 
             # Tendência de incidentes por serviço por semana
             if coluna_servico:
@@ -822,20 +832,11 @@ with aba_causa:
                     .sort_values(ascending=False).head(8).index
                 )
                 serv_tempo = serv_tempo[serv_tempo[coluna_servico].isin(top_serv_tempo)]
-                fig = px.area(
-                    serv_tempo, x="semana", y="qtd", color=coluna_servico,
-                    category_orders={coluna_servico: top_serv_tempo},
-                    line_shape="linear",
-                    color_discrete_sequence=COLOR_SEQUENCE,
+                fig = grafico_tendencia_semanal(
+                    serv_tempo, coluna_servico, top_serv_tempo,
+                    "Tendência semanal de incidentes por serviço",
                 )
-                fig.update_traces(line=dict(width=2), opacity=0.85, hovertemplate="%{y} tickets<extra>%{fullData.name}</extra>")
-                fig.update_layout(
-                    xaxis_title="", yaxis_title="Tickets", legend_title="",
-                    hovermode="x unified",
-                )
-                fig.update_xaxes(showgrid=False)
-                fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False)
-                st.plotly_chart(grafico(fig, "Tendência semanal de incidentes por serviço"), width="stretch")
+                st.plotly_chart(fig, width="stretch")
 
 
 # --- Detalhado -------------------------------------------------------------------
