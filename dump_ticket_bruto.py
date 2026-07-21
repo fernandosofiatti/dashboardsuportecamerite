@@ -10,9 +10,10 @@ ticket) - isso varia de empresa pra empresa. Sem ver dados reais não dá pra
 ter certeza se o campo "organization" (empresa vinculada ao solicitante)
 está preenchido, ou se o nome certo pra usar é outro.
 
-Este script busca alguns tickets (sem limitar os campos com $select, pra
-trazer TUDO que a API tiver) e salva o JSON bruto em um arquivo, além de
-mostrar na tela um resumo de "clients" e "createdBy" de cada um.
+Este script busca alguns tickets (campos id, subject, clients e createdBy -
+o Movidesk exige que $select seja informado, não dá pra pedir "tudo") e
+salva o JSON bruto em um arquivo, além de mostrar na tela um resumo de
+"clients" e "createdBy" de cada um.
 
 COMO USAR
 ---------
@@ -45,17 +46,25 @@ if MOVIDESK_TOKEN in (None, "", "COLE_SEU_TOKEN_AQUI"):
           "(mesma configuração usada pelo extrai_movidesk.py).")
     raise SystemExit(1)
 
-print(f"Buscando os últimos {QUANTIDADE} tickets (todos os campos, sem $select)...")
+print(f"Buscando {QUANTIDADE} tickets (id, subject, clients, createdBy)...")
 resp = requests.get(
     f"{BASE_URL}/tickets",
     params={
         "token": MOVIDESK_TOKEN,
+        # O Movidesk EXIGE $select (não é opcional, apesar de parecer) - por
+        # isso a primeira versão deste script (sem $select) dava 400 Bad
+        # Request. $orderby também não aceita "campo asc/desc" como no OData
+        # padrão, só "asc" ou "desc" sozinho - então nem usamos aqui, já que
+        # pra esse diagnóstico não importa a ordem dos tickets.
+        "$select": "id,subject,clients,createdBy",
         "$top": QUANTIDADE,
-        "$orderby": "id desc",
     },
     timeout=60,
 )
-resp.raise_for_status()
+if not resp.ok:
+    print(f"ERRO {resp.status_code} da API do Movidesk:")
+    print(resp.text[:1000])
+    resp.raise_for_status()
 tickets = resp.json()
 
 with open("tickets_brutos.json", "w", encoding="utf-8") as f:
