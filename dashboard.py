@@ -331,6 +331,19 @@ def grafico_rosca(labels, values, titulo, hole=0.55):
     return fig
 
 
+def grafico_area_tempo_parado(df_just, titulo, cor):
+    """Gráfico de área com um chamado (id) por ponto no eixo X, ordenado do
+    que está parado há mais tempo para o que está há menos tempo, com o
+    tempo parado (em horas corridas, que pode passar de 24h) no eixo Y."""
+    df_just = df_just.sort_values("horas_parado", ascending=False)
+    fig = px.area(df_just, x="id_str", y="horas_parado")
+    fig.update_traces(line_color=cor, fillcolor=hex_para_rgba(cor, 0.25), mode="lines+markers")
+    fig.update_layout(xaxis_title="", yaxis_title="Horas parado")
+    fig.update_xaxes(categoryorder="array", categoryarray=df_just["id_str"].tolist(), tickangle=-35)
+    fig.update_traces(hovertemplate="Chamado %{x}: %{y:.1f}h parado<extra></extra>")
+    return grafico(fig, titulo)
+
+
 PRAZO_CORES = {
     "No prazo": "#14B8A6", "Dentro do prazo": "#14B8A6",
     "Fora do prazo": "#EF4444", "Estourado": "#EF4444",
@@ -902,6 +915,61 @@ with aba_tempo:
                 )
             else:
                 st.info("Sem dados suficientes de tempo até resolução para os filtros atuais.")
+
+        st.write("")
+        st.markdown("##### Incidentes aguardando DEV")
+        st.caption(
+            "Considera chamados com categoria 'Incidente' e status 'Aguardando'. O tempo "
+            "parado é calculado a partir da última atualização do chamado e pode passar de "
+            "24h - não é só o horário do dia, é o tempo corrido completo."
+        )
+
+        colunas_necessarias = {"categoria", "status", "justificativa", "ultima_atualizacao", "id"}
+        if colunas_necessarias.issubset(dff.columns):
+            base_dev = dff[
+                (dff["categoria"] == "Incidente") & (dff["status"] == "Aguardando")
+            ].dropna(subset=["ultima_atualizacao"]).copy()
+
+            if base_dev.empty:
+                st.info("Nenhum chamado de Incidente aguardando para os filtros atuais.")
+            else:
+                # ultima_atualizacao vem do Movidesk em UTC (3h à frente do
+                # horário de Brasília). Convertendo os dois lados para
+                # Brasília (agora - 3h e ultima_atualizacao - 3h), o
+                # deslocamento de 3h se cancela na subtração - por isso dá
+                # pra usar "agora" direto em UTC (mesmo padrão usado em
+                # calcular_prazo()) que o resultado em horas é o mesmo.
+                agora_utc = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+                base_dev["horas_parado"] = (
+                    (agora_utc - base_dev["ultima_atualizacao"]).dt.total_seconds() / 3600
+                )
+                base_dev["id_str"] = base_dev["id"].astype(str)
+
+                cd1, cd2 = st.columns(2)
+                with cd1:
+                    analise = base_dev[base_dev["justificativa"] == "Análise DEV"]
+                    if not analise.empty:
+                        st.plotly_chart(
+                            grafico_area_tempo_parado(
+                                analise, "Parados em 'Análise DEV'", COLOR_SEQUENCE[4],
+                            ),
+                            width="stretch",
+                        )
+                    else:
+                        st.info("Nenhum chamado em 'Análise DEV' no momento.")
+                with cd2:
+                    correcao = base_dev[base_dev["justificativa"] == "Correção DEV"]
+                    if not correcao.empty:
+                        st.plotly_chart(
+                            grafico_area_tempo_parado(
+                                correcao, "Parados em 'Correção DEV'", COLOR_SEQUENCE[8],
+                            ),
+                            width="stretch",
+                        )
+                    else:
+                        st.info("Nenhum chamado em 'Correção DEV' no momento.")
+        else:
+            st.info("Colunas necessárias (categoria/status/justificativa/ultima_atualizacao/id) não disponíveis.")
 
 # --- Causa Raiz & Prazo -----------------------------------------------------
 with aba_causa:
