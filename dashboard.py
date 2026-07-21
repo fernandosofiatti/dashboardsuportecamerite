@@ -206,6 +206,35 @@ st.markdown(
         background-color: white; border-radius: 8px; border: 1px solid #E4E7EC;
         box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
     }
+
+    /* ------------------------------------------------------------------
+       Esconde os elementos que o Streamlit Cloud injeta e que apontam para
+       o código-fonte: menu de hambúrguer, botão "Deploy", a faixa colorida
+       do topo, o rodapé "Made with Streamlit" e o badge/link "Fork this app"
+       do GitHub.
+
+       ATENÇÃO: isso é só cosmético. O repositório continua público no
+       GitHub - o objetivo aqui é não deixar o convite óbvio na tela, não
+       proteger o fonte. Nada sensível pode estar commitado (use st.secrets).
+
+       Obs.: NÃO usamos "header { visibility: hidden }" de propósito, porque
+       isso derrubaria junto a setinha que abre/fecha a sidebar no celular.
+       Escondemos só a toolbar da direita.
+       ------------------------------------------------------------------ */
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
+    [data-testid="stAppDeployButton"],
+    .stAppDeployButton { display: none !important; }
+
+    /* O badge "Fork this app" muda de classe a cada versão do Cloud, por
+       isso o seletor genérico por prefixo em vez da classe exata. */
+    [class*="viewerBadge"] { display: none !important; }
+    .stApp a[href^="https://github.com"],
+    .stApp a[href^="https://share.streamlit.io"],
+    .stApp a[href^="https://streamlit.io"] { display: none !important; }
     </style>
     """,
     unsafe_allow_html=True,
