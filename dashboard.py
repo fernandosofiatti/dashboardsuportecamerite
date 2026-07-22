@@ -1061,20 +1061,22 @@ with aba_tempo:
                 st.info("Sem dados suficientes de tempo útil de atendimento para os filtros atuais.")
 
         st.write("")
-        st.markdown("##### Tempo em atendimento por categoria (chamados abertos)")
+        st.markdown("##### Tempo em atendimento por justificativa (chamados abertos)")
         st.caption(
             "Considera os chamados ainda abertos (novos, em atendimento e parados) e mostra, "
-            "por categoria, há quanto tempo estão em atendimento e quantos chamados há em cada. "
-            "Usa horas úteis (horário comercial trabalhado, descontando pausas) quando o "
+            "por justificativa, há quanto tempo estão em atendimento e quantos chamados há em "
+            "cada. Usa horas úteis (horário comercial trabalhado, descontando pausas) quando o "
             "Movidesk fornece esse dado; para os chamados sem esse tempo apurado, usa o tempo "
-            "corrido desde a abertura."
+            "corrido desde a abertura. **Clique numa barra para ver os chamados.**"
         )
 
-        if {"categoria", "status_base"}.issubset(dff.columns):
+        if {"justificativa", "status_base"}.issubset(dff.columns):
             abertos_atend = dff[
                 dff["status_base"].isin(["New", "InAttendance", "Stopped"])
-                & dff["categoria"].notna()
             ].copy()
+            abertos_atend["justificativa_lbl"] = (
+                abertos_atend["justificativa"].fillna("").replace("", "Sem justificativa")
+            )
 
             if abertos_atend.empty:
                 st.info("Nenhum chamado aberto para os filtros atuais.")
@@ -1109,20 +1111,20 @@ with aba_tempo:
                     st.info("Sem tempo apurado para os chamados abertos nos filtros atuais.")
                 else:
                     resumo_ab = (
-                        abertos_atend.groupby("categoria")["tempo_atend_horas"]
+                        abertos_atend.groupby("justificativa_lbl")["tempo_atend_horas"]
                         .agg(media="mean", qtd="size")
                         .reset_index()
                         .sort_values("media", ascending=False)
                     )
-                    ordem_ab = resumo_ab["categoria"].tolist()
+                    ordem_ab = resumo_ab["justificativa_lbl"].tolist()
                     resumo_ab["rotulo"] = (
                         resumo_ab["media"].round(1).astype(str) + " h · "
                         + resumo_ab["qtd"].astype(int).astype(str) + " chamado(s)"
                     )
 
                     fig = px.bar(
-                        resumo_ab, x="media", y="categoria", orientation="h", text="rotulo",
-                        category_orders={"categoria": ordem_ab[::-1]},
+                        resumo_ab, x="media", y="justificativa_lbl", orientation="h", text="rotulo",
+                        category_orders={"justificativa_lbl": ordem_ab[::-1]},
                     )
                     fig.update_traces(
                         marker_color=COLOR_SEQUENCE[0], textposition="outside",
@@ -1133,9 +1135,43 @@ with aba_tempo:
                         xaxis=dict(showgrid=True, gridcolor="#EEF2F6", zeroline=False),
                         height=max(340, 38 * len(resumo_ab) + 110),
                     )
-                    st.plotly_chart(grafico(fig, "Tempo em atendimento por categoria"), width="stretch")
+                    evento_ab = st.plotly_chart(
+                        grafico(fig, "Tempo em atendimento por justificativa"),
+                        width="stretch",
+                        on_select="rerun",
+                        key="grafico_atend_justificativa",
+                    )
+
+                    # Detalhamento das justificativas clicadas.
+                    pontos_ab = []
+                    try:
+                        pontos_ab = evento_ab.selection.points if evento_ab and evento_ab.selection else []
+                    except AttributeError:
+                        pontos_ab = []
+                    just_clicadas = sorted({p.get("y") for p in pontos_ab if p.get("y")})
+
+                    if just_clicadas:
+                        st.markdown("##### Detalhamento — " + ", ".join(str(j) for j in just_clicadas))
+                        det_ab = abertos_atend[abertos_atend["justificativa_lbl"].isin(just_clicadas)].copy()
+                        det_ab["tempo_atend_horas"] = det_ab["tempo_atend_horas"].round(1)
+                        colunas_ab = [
+                            c for c in [
+                                "id", "protocolo", "assunto", "categoria", "status",
+                                "justificativa", "urgencia", "responsavel", "equipe_responsavel",
+                                "tempo_atend_horas",
+                            ] if c in det_ab.columns
+                        ]
+                        det_ab = det_ab[colunas_ab].sort_values("tempo_atend_horas", ascending=False)
+                        st.caption(f"{len(det_ab)} chamado(s). Tempo em atendimento em horas.")
+                        st.dataframe(det_ab, width="stretch", height=350, hide_index=True)
+                        csv_ab = det_ab.to_csv(index=False).encode("utf-8-sig")
+                        st.download_button(
+                            "⬇️ Baixar detalhamento (CSV)", csv_ab,
+                            "detalhamento_atendimento_justificativa.csv", "text/csv",
+                            key="download_detalhe_atend_justificativa",
+                        )
         else:
-            st.info("Colunas necessárias (categoria/status) não disponíveis.")
+            st.info("Colunas necessárias (justificativa/status) não disponíveis.")
 
         st.write("")
         st.markdown("##### Incidentes aguardando DEV")
