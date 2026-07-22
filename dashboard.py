@@ -917,7 +917,7 @@ with aba_tempo:
                 fig.update_traces(textposition="outside")
                 fig.update_layout(xaxis_title="Minutos úteis de atendimento", yaxis_title="", legend_title="")
                 st.plotly_chart(
-                    grafico(fig, "Tempo útil de atendimento por categoria (top 10 por volume)"),
+                    grafico(fig, "Tempo útil de atendimento por categoria"),
                     width="stretch",
                 )
                 st.caption(
