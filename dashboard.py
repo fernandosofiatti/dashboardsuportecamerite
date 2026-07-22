@@ -1167,15 +1167,19 @@ with aba_tempo:
                         + resumo_ab["qtd"].astype(int).astype(str) + " chamado(s)"
                     )
 
+                    # color="justificativa_lbl" faz o Plotly montar um trace por
+                    # justificativa (multi-trace), igual ao gráfico de categoria
+                    # que já funciona - com trace único a seleção por clique do
+                    # Streamlit não dispara de forma confiável em barra.
                     fig = px.bar(
                         resumo_ab, x="media", y="justificativa_lbl", orientation="h", text="rotulo",
+                        color="justificativa_lbl",
                         category_orders={"justificativa_lbl": ordem_ab[::-1]},
+                        color_discrete_sequence=COLOR_SEQUENCE,
                     )
-                    fig.update_traces(
-                        marker_color=COLOR_SEQUENCE[0], textposition="outside",
-                        hovertemplate="%{y}: %{x:.1f}h em atendimento<extra></extra>",
-                    )
+                    fig.update_traces(textposition="outside")
                     fig.update_layout(
+                        showlegend=False,
                         xaxis_title="Horas em atendimento", yaxis_title="",
                         xaxis=dict(showgrid=True, gridcolor="#EEF2F6", zeroline=False),
                         height=max(340, 38 * len(resumo_ab) + 110),
