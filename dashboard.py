@@ -1031,19 +1031,23 @@ with aba_tempo:
                 )
                 ordem_cats = resumo["categoria"].tolist()
 
+                # Converte de minutos para horas para o gráfico.
+                resumo["media"] = resumo["media"] / 60
+                resumo["sla"] = resumo["sla"] / 60
+
                 plot_df = resumo.melt(
                     id_vars="categoria", value_vars=["media", "sla"],
-                    var_name="metrica", value_name="minutos",
+                    var_name="metrica", value_name="horas",
                 )
                 plot_df["metrica"] = plot_df["metrica"].map(
                     {"media": "Tempo médio de atendimento", "sla": "SLA (meta)"}
                 )
-                plot_df["rotulo"] = plot_df["minutos"].apply(
-                    lambda v: f"{int(round(v))} min" if pd.notna(v) else ""
+                plot_df["rotulo"] = plot_df["horas"].apply(
+                    lambda v: f"{v:.1f} h" if pd.notna(v) else ""
                 )
 
                 fig = px.bar(
-                    plot_df, x="minutos", y="categoria", color="metrica", orientation="h",
+                    plot_df, x="horas", y="categoria", color="metrica", orientation="h",
                     barmode="group", text="rotulo",
                     category_orders={
                         "categoria": ordem_cats[::-1],
@@ -1055,7 +1059,7 @@ with aba_tempo:
                     },
                 )
                 fig.update_traces(textposition="outside")
-                fig.update_layout(xaxis_title="Minutos", yaxis_title="", legend_title="")
+                fig.update_layout(xaxis_title="Horas", yaxis_title="", legend_title="")
                 evento = st.plotly_chart(
                     grafico(fig, "Tempo útil de atendimento x SLA por categoria"),
                     width="stretch",
@@ -1080,17 +1084,18 @@ with aba_tempo:
                         "##### Detalhamento — " + ", ".join(str(c) for c in cats_clicadas)
                     )
                     detalhe = amostra[amostra["categoria"].isin(cats_clicadas)].copy()
-                    detalhe["tempo_util_min"] = detalhe["tempo_util_min"].round(0).astype(int)
+                    detalhe["tempo_atendimento_h"] = (detalhe["tempo_util_min"] / 60).round(1)
+                    detalhe["sla_horas"] = (detalhe["sla_tempo_solucao_min"] / 60).round(1)
                     colunas_det = [
                         c for c in [
                             "id", "protocolo", "assunto", "categoria", "status",
                             "urgencia", "responsavel", "equipe_responsavel",
-                            "tempo_vida_horas_uteis_min", "tempo_parado_min", "tempo_util_min",
-                            "sla_tempo_solucao_min",
+                            "tempo_vida_horas_uteis_min", "tempo_parado_min",
+                            "tempo_atendimento_h", "sla_horas",
                         ] if c in detalhe.columns
                     ]
-                    detalhe = detalhe[colunas_det].sort_values("tempo_util_min", ascending=False)
-                    st.caption(f"{len(detalhe)} chamado(s). Tempo útil e SLA em minutos.")
+                    detalhe = detalhe[colunas_det].sort_values("tempo_atendimento_h", ascending=False)
+                    st.caption(f"{len(detalhe)} chamado(s). Tempo de atendimento e SLA em horas.")
                     st.dataframe(detalhe, width="stretch", height=350, hide_index=True)
                     csv_det = detalhe.to_csv(index=False).encode("utf-8-sig")
                     st.download_button(
