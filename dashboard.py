@@ -826,8 +826,25 @@ with aba_tempo:
         finalizados, em_atend, fin_com_sla, atend_com_sla, pct_no_prazo, pct_estourado = resumo_prazo(dcr)
         pct_atend_no_prazo = 100 - pct_estourado if pct_estourado is not None else None
 
-        tempo_medio_resolucao = dff["tempo_ate_resolucao_horas"].mean() if "tempo_ate_resolucao_horas" in dff else None
-        tempo_medio_fechamento = dff["tempo_ate_fechamento_horas"].mean() if "tempo_ate_fechamento_horas" in dff else None
+        # Tempos médios em horário ÚTIL (mesma base do gráfico por categoria),
+        # calculados sobre os chamados finalizados no período:
+        #   - atendimento ativo = tempo de vida útil menos as pausas
+        #   - parado/aguardando = só o tempo pausado
+        # O Movidesk fornece um único lifeTimeWorkingTime (não separa "útil até
+        # resolução" de "útil até fechamento"), então mostramos ativo x parado,
+        # que são as duas medidas úteis realmente disponíveis.
+        base_final = dff[dff["status_base"].isin(["Resolved", "Closed"])] if "status_base" in dff else dff.iloc[0:0]
+        tempo_util_atend = None
+        tempo_util_parado = None
+        if "tempo_vida_horas_uteis_min" in dff.columns and not base_final.empty:
+            parado_f = (
+                base_final["tempo_parado_min"].fillna(0)
+                if "tempo_parado_min" in base_final.columns else 0
+            )
+            vida_f = base_final["tempo_vida_horas_uteis_min"].fillna(0)
+            tempo_util_atend = ((vida_f - parado_f).clip(lower=0) / 60).mean()
+            if "tempo_parado_min" in base_final.columns:
+                tempo_util_parado = (base_final["tempo_parado_min"].fillna(0) / 60).mean()
 
         st.markdown("##### Cumprimento de SLA")
 
@@ -843,10 +860,18 @@ with aba_tempo:
             else:
                 st.info("Sem SLA cadastrado nos tickets em atendimento.")
         with m1:
-            st.metric("Tempo médio até resolução", f"{tempo_medio_resolucao:.1f} h" if pd.notna(tempo_medio_resolucao) else "—")
+            st.metric(
+                "Tempo médio útil de atendimento",
+                f"{tempo_util_atend:.1f} h" if tempo_util_atend is not None and pd.notna(tempo_util_atend) else "—",
+                help="Horário comercial trabalhado nos finalizados, descontando as pausas/aguardando.",
+            )
             st.metric("Finalizados (no período)", len(finalizados))
         with m2:
-            st.metric("Tempo médio até fechamento", f"{tempo_medio_fechamento:.1f} h" if pd.notna(tempo_medio_fechamento) else "—")
+            st.metric(
+                "Tempo médio parado (aguardando)",
+                f"{tempo_util_parado:.1f} h" if tempo_util_parado is not None and pd.notna(tempo_util_parado) else "—",
+                help="Tempo médio em que os finalizados ficaram parados/aguardando (stoppedTime).",
+            )
             st.metric("Em atendimento (no período)", len(em_atend))
 
         st.write("")
