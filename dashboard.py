@@ -302,15 +302,17 @@ def grafico(fig, titulo=None):
     return fig
 
 
-def categorias_selecionadas(evento, eixo="y"):
+def categorias_selecionadas(evento, eixo="y", ordem=None):
     """Lê, de forma robusta, os rótulos clicados num gráfico com on_select.
 
     O objeto devolvido pelo st.plotly_chart(on_select=...) pode expor a
     seleção como atributo (evento.selection.points) ou como dicionário
     (evento["selection"]["points"]), dependendo da versão do Streamlit.
-    Aqui tentamos as duas formas e ainda cobrimos nomes de chave
-    alternativos ('y'/'label') que o Plotly usa para a categoria dependendo
-    do tipo de gráfico. Retorna uma lista ordenada de rótulos."""
+    Aqui tentamos as duas formas e ainda cobrimos: (a) nomes de chave
+    alternativos ('y'/'label') que o Plotly usa para a categoria conforme o
+    tipo de gráfico e (b) como último recurso, o índice do ponto
+    (point_index/point_number) mapeado para a lista `ordem` (a mesma ordem
+    dos dados passados ao px.bar). Retorna uma lista ordenada de rótulos."""
     if not evento:
         return []
 
@@ -328,11 +330,14 @@ def categorias_selecionadas(evento, eixo="y"):
 
     rotulos = set()
     for p in pontos:
-        valor = None
-        if isinstance(p, dict):
-            valor = p.get(eixo) or p.get("label")
-        else:
-            valor = getattr(p, eixo, None) or getattr(p, "label", None)
+        get = p.get if isinstance(p, dict) else (lambda k, d=None: getattr(p, k, d))
+        valor = get(eixo) or get("label")
+        if (valor is None or valor == "") and ordem is not None:
+            idx = get("point_index")
+            if idx is None:
+                idx = get("point_number")
+            if isinstance(idx, int) and 0 <= idx < len(ordem):
+                valor = ordem[idx]
         if valor is not None and valor != "":
             rotulos.add(valor)
     return sorted(rotulos)
@@ -1066,7 +1071,7 @@ with aba_tempo:
                 # Detalhamento: aceita o clique na barra e também um seletor
                 # abaixo (o clique em barra nem sempre dispara a seleção no
                 # Streamlit Cloud, então o seletor garante o drill-down).
-                cats_clicadas = categorias_selecionadas(evento, eixo="y")
+                cats_clicadas = categorias_selecionadas(evento, eixo="y", ordem=ordem_cats)
                 escolha_cat = st.selectbox(
                     "Ou selecione a categoria para ver os chamados:",
                     ["(nenhuma)"] + ordem_cats,
@@ -1187,7 +1192,7 @@ with aba_tempo:
                     # captura) e também um seletor abaixo, que funciona sempre -
                     # em algumas versões do Streamlit Cloud o clique em barra não
                     # dispara a seleção, então o seletor garante o drill-down.
-                    just_clicadas = categorias_selecionadas(evento_ab, eixo="y")
+                    just_clicadas = categorias_selecionadas(evento_ab, eixo="y", ordem=ordem_ab)
                     escolha_ab = st.selectbox(
                         "Ou selecione a justificativa para ver os chamados:",
                         ["(nenhuma)"] + ordem_ab,
