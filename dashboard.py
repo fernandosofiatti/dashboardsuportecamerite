@@ -1000,11 +1000,12 @@ with aba_tempo:
         st.markdown("##### Tempo de atendimento x SLA por categoria")
 
         if {"categoria", "tempo_vida_horas_uteis_min", "sla_tempo_solucao_min", "status_base"}.issubset(dff.columns):
-            # Comparativo por categoria: tempo médio ÚTIL de atendimento dos
-            # tickets FECHADOS (resolvidos/fechados) contra a meta de SLA de
-            # solução (média do sla_tempo_solucao_min), tudo em minutos.
-            # Tempo útil = lifeTimeWorkingTime menos o tempo parado (stoppedTime)
-            # - desconta noites, fins de semana e pausas.
+            # Comparativo por categoria: tempo médio de atendimento dos tickets
+            # FECHADOS (resolvidos/fechados) contra a meta de SLA de solução
+            # (média do sla_tempo_solucao_min), tudo em minutos.
+            # Tempo de atendimento = lifeTimeWorkingTime MAIS o tempo parado
+            # (stoppedTime) - ou seja, o tempo total em horário comercial
+            # incluindo as pausas/aguardando.
             base_util = dff[
                 dff["categoria"].notna()
                 & dff["status_base"].isin(["Resolved", "Closed"])
@@ -1015,7 +1016,7 @@ with aba_tempo:
                 if "tempo_parado_min" in base_util.columns else 0
             )
             base_util["tempo_util_min"] = (
-                base_util["tempo_vida_horas_uteis_min"].fillna(0) - parado
+                base_util["tempo_vida_horas_uteis_min"].fillna(0) + parado
             ).clip(lower=0)
             base_util["sla_min"] = base_util["sla_tempo_solucao_min"]
 
@@ -1064,8 +1065,8 @@ with aba_tempo:
                 )
                 st.caption(
                     "Considera os tickets fechados (resolvidos/fechados). Compara, por categoria, "
-                    "o tempo médio útil de atendimento (horário comercial, descontando pausas) com "
-                    "a meta de SLA de solução. Quando a barra de atendimento passa a do SLA, a "
+                    "o tempo médio de atendimento (horário comercial, tempo útil + tempo parado) "
+                    "com a meta de SLA de solução. Quando a barra de atendimento passa a do SLA, a "
                     "categoria está, em média, estourando o prazo. "
                     "**Clique numa barra para ver os chamados da categoria.**"
                 )
