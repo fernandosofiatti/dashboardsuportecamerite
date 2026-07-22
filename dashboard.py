@@ -1060,12 +1060,20 @@ with aba_tempo:
                     "semana e pausas. O tempo médio pode ser puxado para cima por poucos "
                     "chamados muito demorados; o tempo típico (mediana) mostra melhor a maioria "
                     "dos casos: metade dos chamados dessa categoria leva menos tempo que isso, e "
-                    "a outra metade mais. **Clique numa barra para ver os chamados da categoria.**"
+                    "a outra metade mais. **Clique numa barra (ou use o seletor) para ver os chamados.**"
                 )
 
-                # Detalhamento: categorias das barras clicadas (numa barra
-                # horizontal, a categoria fica no eixo Y de cada ponto).
+                # Detalhamento: aceita o clique na barra e também um seletor
+                # abaixo (o clique em barra nem sempre dispara a seleção no
+                # Streamlit Cloud, então o seletor garante o drill-down).
                 cats_clicadas = categorias_selecionadas(evento, eixo="y")
+                escolha_cat = st.selectbox(
+                    "Ou selecione a categoria para ver os chamados:",
+                    ["(nenhuma)"] + ordem_cats,
+                    key="sel_tempo_util_categoria",
+                )
+                if not cats_clicadas and escolha_cat != "(nenhuma)":
+                    cats_clicadas = [escolha_cat]
 
                 if cats_clicadas:
                     st.markdown(
@@ -1175,8 +1183,18 @@ with aba_tempo:
                         key="grafico_atend_justificativa",
                     )
 
-                    # Detalhamento das justificativas clicadas.
+                    # Detalhamento: aceita o clique na barra (quando o Streamlit
+                    # captura) e também um seletor abaixo, que funciona sempre -
+                    # em algumas versões do Streamlit Cloud o clique em barra não
+                    # dispara a seleção, então o seletor garante o drill-down.
                     just_clicadas = categorias_selecionadas(evento_ab, eixo="y")
+                    escolha_ab = st.selectbox(
+                        "Ou selecione a justificativa para ver os chamados:",
+                        ["(nenhuma)"] + ordem_ab,
+                        key="sel_atend_justificativa",
+                    )
+                    if not just_clicadas and escolha_ab != "(nenhuma)":
+                        just_clicadas = [escolha_ab]
 
                     if just_clicadas:
                         st.markdown("##### Detalhamento — " + ", ".join(str(j) for j in just_clicadas))
