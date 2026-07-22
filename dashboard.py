@@ -908,25 +908,46 @@ with aba_tempo:
                 contagem = tags_sla.groupby(["tag", "status_sla"]).size().reset_index(name="qtd")
                 totais = contagem.groupby("tag")["qtd"].transform("sum")
                 contagem["pct"] = (contagem["qtd"] / totais * 100).round(0)
-                contagem["rotulo"] = contagem["pct"].astype(int).astype(str) + "%"
-                ordem_tags_sla = list(
-                    contagem.groupby("tag")["qtd"].sum().sort_values(ascending=False).index
+                # Rótulo só nas fatias com espaço (>= 8%), pra não poluir com
+                # números espremidos em pedacinhos pequenos.
+                contagem["rotulo"] = np.where(
+                    contagem["pct"] >= 8, contagem["pct"].astype(int).astype(str) + "%", ""
                 )
+
+                # Ordena por cumprimento: piores no topo (menor % no prazo),
+                # pra destacar onde o SLA está sofrendo.
+                pct_no_prazo_tag = (
+                    tags_sla.groupby("tag")["status_sla"]
+                    .apply(lambda s: (s == "No prazo").mean() * 100)
+                )
+                # No eixo horizontal, o último da lista aparece no topo -> pra
+                # deixar o pior lá em cima, ordenamos do melhor para o pior.
+                ordem_tags_sla = pct_no_prazo_tag.sort_values(ascending=False).index.tolist()
+
+                # Cores mais suaves que o vermelho/verde puros anteriores.
+                cores_sla = {"No prazo": "#17A398", "Fora do prazo": "#EF7B6E"}
                 fig = px.bar(
                     contagem, x="pct", y="tag", color="status_sla", orientation="h",
                     text="rotulo",
-                    color_discrete_map=PRAZO_CORES,
+                    color_discrete_map=cores_sla,
                     category_orders={
                         "status_sla": ["No prazo", "Fora do prazo"],
-                        "tag": ordem_tags_sla[::-1],
+                        "tag": ordem_tags_sla,
                     },
                 )
-                fig.update_traces(textposition="inside", insidetextanchor="middle")
-                fig.update_layout(
-                    barmode="stack", xaxis_title="% dos tickets", yaxis_title="", legend_title="",
-                    xaxis=dict(range=[0, 100], ticksuffix="%"),
+                fig.update_traces(
+                    textposition="inside", insidetextanchor="middle",
+                    textfont=dict(color="white", size=12),
+                    marker_line=dict(color="white", width=1.5),
+                    width=0.62,
                 )
-                st.plotly_chart(grafico(fig, "Cumprimento de SLA por causa raiz (top 10 tags)"), width="stretch")
+                fig.update_layout(
+                    barmode="stack", xaxis_title="", yaxis_title="", legend_title="",
+                    xaxis=dict(range=[0, 100], ticksuffix="%", showgrid=False, zeroline=False),
+                    yaxis=dict(showgrid=False),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                )
+                st.plotly_chart(grafico(fig, "Cumprimento de SLA por causa raiz"), width="stretch")
             else:
                 st.info("Nenhum ticket com SLA cadastrado para calcular por tag.")
         else:
