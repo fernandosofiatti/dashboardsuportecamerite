@@ -977,6 +977,17 @@ with aba_tempo:
                         )
                     else:
                         st.info("Nenhum chamado em 'Correção DEV' no momento.")
+
+                # KPI consolidado, abaixo dos dois gráficos: tempo médio de
+                # TODOS os chamados no time de Desenvolvimento (Análise DEV +
+                # Correção DEV juntos), respeitando os mesmos filtros.
+                dev = base_dev[base_dev["justificativa"].isin(["Análise DEV", "Correção DEV"])]
+                if not dev.empty:
+                    st.metric(
+                        "Tempo médio total no Desenvolvimento (Análise + Correção DEV)",
+                        f"{dev['horas_parado'].mean():.1f} h",
+                        help=f"Média do tempo parado de {len(dev)} chamado(s) em Análise DEV e Correção DEV.",
+                    )
         else:
             st.info("Colunas necessárias (categoria/status/justificativa/ultima_atualizacao/id) não disponíveis.")
 
