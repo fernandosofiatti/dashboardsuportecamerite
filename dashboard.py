@@ -916,9 +916,14 @@ with aba_tempo:
                 )
                 fig.update_traces(textposition="outside")
                 fig.update_layout(xaxis_title="Minutos úteis de atendimento", yaxis_title="", legend_title="")
-                st.plotly_chart(
+                # on_select="rerun": ao clicar numa barra, o Streamlit reexecuta
+                # o app e devolve o ponto clicado - usamos isso pra abrir o
+                # detalhamento dos chamados daquela categoria logo abaixo.
+                evento = st.plotly_chart(
                     grafico(fig, "Tempo útil de atendimento por categoria"),
                     width="stretch",
+                    on_select="rerun",
+                    key="grafico_tempo_util_categoria",
                 )
                 st.caption(
                     "Tempo útil = tempo de vida em horário comercial (minutos úteis) menos o "
@@ -926,8 +931,40 @@ with aba_tempo:
                     "semana e pausas. O tempo médio pode ser puxado para cima por poucos "
                     "chamados muito demorados; o tempo típico (mediana) mostra melhor a maioria "
                     "dos casos: metade dos chamados dessa categoria leva menos tempo que isso, e "
-                    "a outra metade mais."
+                    "a outra metade mais. **Clique numa barra para ver os chamados da categoria.**"
                 )
+
+                # Detalhamento: categorias das barras clicadas (numa barra
+                # horizontal, a categoria fica no eixo Y de cada ponto).
+                pontos = []
+                try:
+                    pontos = evento.selection.points if evento and evento.selection else []
+                except AttributeError:
+                    pontos = []
+                cats_clicadas = sorted({p.get("y") for p in pontos if p.get("y")})
+
+                if cats_clicadas:
+                    st.markdown(
+                        "##### Detalhamento — " + ", ".join(str(c) for c in cats_clicadas)
+                    )
+                    detalhe = amostra[amostra["categoria"].isin(cats_clicadas)].copy()
+                    detalhe["tempo_util_min"] = detalhe["tempo_util_min"].round(0).astype(int)
+                    colunas_det = [
+                        c for c in [
+                            "id", "protocolo", "assunto", "categoria", "status",
+                            "urgencia", "responsavel", "equipe_responsavel",
+                            "tempo_vida_horas_uteis_min", "tempo_parado_min", "tempo_util_min",
+                        ] if c in detalhe.columns
+                    ]
+                    detalhe = detalhe[colunas_det].sort_values("tempo_util_min", ascending=False)
+                    st.caption(f"{len(detalhe)} chamado(s). Tempo útil em minutos.")
+                    st.dataframe(detalhe, width="stretch", height=350, hide_index=True)
+                    csv_det = detalhe.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button(
+                        "⬇️ Baixar detalhamento (CSV)", csv_det,
+                        "detalhamento_tempo_util.csv", "text/csv",
+                        key="download_detalhe_tempo_util",
+                    )
             else:
                 st.info("Sem dados suficientes de tempo útil de atendimento para os filtros atuais.")
 
