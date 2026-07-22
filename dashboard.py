@@ -869,7 +869,7 @@ with aba_tempo:
         if {"categoria", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
             # Tempo ÚTIL de atendimento = tempo de vida em horário comercial
             # (lifeTimeWorkingTime do Movidesk) menos o tempo em que o chamado
-            # ficou parado/aguardando (stoppedTime), convertido para horas.
+            # ficou parado/aguardando (stoppedTime), em minutos.
             # Diferente do tempo corrido (data_resolucao - data_abertura), este
             # desconta noites, fins de semana e pausas - é o "tempo de mão na
             # massa" de atendimento.
@@ -878,15 +878,15 @@ with aba_tempo:
                 base_util["tempo_parado_min"].fillna(0)
                 if "tempo_parado_min" in base_util.columns else 0
             )
-            base_util["tempo_util_horas"] = (
-                (base_util["tempo_vida_horas_uteis_min"].fillna(0) - parado) / 60
+            base_util["tempo_util_min"] = (
+                base_util["tempo_vida_horas_uteis_min"].fillna(0) - parado
             ).clip(lower=0)
 
             top_cats = base_util["categoria"].value_counts().head(10).index
             amostra = base_util[base_util["categoria"].isin(top_cats)]
             if not amostra.empty:
                 resumo = (
-                    amostra.groupby("categoria")["tempo_util_horas"]
+                    amostra.groupby("categoria")["tempo_util_min"]
                     .agg(media="mean", mediana="median")
                     .reset_index()
                     .sort_values("media", ascending=False)
@@ -895,15 +895,15 @@ with aba_tempo:
 
                 plot_df = resumo.melt(
                     id_vars="categoria", value_vars=["media", "mediana"],
-                    var_name="metrica", value_name="horas",
+                    var_name="metrica", value_name="minutos",
                 )
                 plot_df["metrica"] = plot_df["metrica"].map(
                     {"media": "Tempo médio", "mediana": "Tempo típico (mediana)"}
                 )
-                plot_df["rotulo"] = plot_df["horas"].round(1).astype(str) + "h"
+                plot_df["rotulo"] = plot_df["minutos"].round(0).astype(int).astype(str) + " min"
 
                 fig = px.bar(
-                    plot_df, x="horas", y="categoria", color="metrica", orientation="h",
+                    plot_df, x="minutos", y="categoria", color="metrica", orientation="h",
                     barmode="group", text="rotulo",
                     category_orders={
                         "categoria": ordem_cats[::-1],
@@ -915,13 +915,13 @@ with aba_tempo:
                     },
                 )
                 fig.update_traces(textposition="outside")
-                fig.update_layout(xaxis_title="Horas úteis de atendimento", yaxis_title="", legend_title="")
+                fig.update_layout(xaxis_title="Minutos úteis de atendimento", yaxis_title="", legend_title="")
                 st.plotly_chart(
                     grafico(fig, "Tempo útil de atendimento por categoria (top 10 por volume)"),
                     width="stretch",
                 )
                 st.caption(
-                    "Tempo útil = tempo de vida em horário comercial (horas úteis) menos o "
+                    "Tempo útil = tempo de vida em horário comercial (minutos úteis) menos o "
                     "tempo em que o chamado ficou parado/aguardando - desconta noites, fins de "
                     "semana e pausas. O tempo médio pode ser puxado para cima por poucos "
                     "chamados muito demorados; o tempo típico (mediana) mostra melhor a maioria "
