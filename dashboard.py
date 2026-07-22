@@ -582,7 +582,14 @@ total = len(dff)
 abertos = int(dff["status_base"].isin(abertos_base).sum()) if "status_base" in dff else None
 resolvidos = int((dff["status_base"] == "Resolved").sum()) if "status_base" in dff else None
 fechados = int((dff["status_base"] == "Closed").sum()) if "status_base" in dff else None
-tempo_medio = dff["tempo_ate_resolucao_horas"].mean() if "tempo_ate_resolucao_horas" in dff else None
+# Tempo médio de atendimento em horário ÚTIL (mesma regra usada na aba
+# Tempo & SLA): tempo de vida útil menos as pausas, sobre os finalizados.
+tempo_medio = None
+if "tempo_vida_horas_uteis_min" in dff.columns and "status_base" in dff:
+    _bf = dff[dff["status_base"].isin(["Resolved", "Closed"])]
+    if not _bf.empty:
+        _parado = _bf["tempo_parado_min"].fillna(0) if "tempo_parado_min" in _bf.columns else 0
+        tempo_medio = ((_bf["tempo_vida_horas_uteis_min"].fillna(0) - _parado).clip(lower=0) / 60).mean()
 fcr = (
     dff["resolvido_primeiro_atendimento"].mean() * 100
     if "resolvido_primeiro_atendimento" in dff and dff["resolvido_primeiro_atendimento"].notna().any()
@@ -594,7 +601,11 @@ col1.metric("Total de tickets", total)
 col2.metric("Em aberto", abertos if abertos is not None else "—")
 col3.metric("Resolvidos", resolvidos if resolvidos is not None else "—")
 col4.metric("Fechados", fechados if fechados is not None else "—")
-col5.metric("Tempo médio p/ resolução", f"{tempo_medio:.1f} h" if pd.notna(tempo_medio) else "—")
+col5.metric(
+    "Tempo médio útil de atendimento",
+    f"{tempo_medio:.1f} h" if tempo_medio is not None and pd.notna(tempo_medio) else "—",
+    help="Horário comercial trabalhado nos finalizados, descontando pausas/aguardando.",
+)
 col6.metric("Resolvido no 1º atendimento", f"{fcr:.0f}%" if fcr is not None and pd.notna(fcr) else "—")
 
 st.write("")
