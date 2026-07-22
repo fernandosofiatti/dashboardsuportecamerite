@@ -1061,6 +1061,61 @@ with aba_tempo:
                 st.info("Sem dados suficientes de tempo útil de atendimento para os filtros atuais.")
 
         st.write("")
+        st.markdown("##### Tempo em atendimento por categoria (chamados abertos)")
+        st.caption(
+            "Considera os chamados ainda abertos (novos, em atendimento e parados) e mostra, "
+            "por categoria, há quanto tempo estão em atendimento em horas úteis (horário "
+            "comercial trabalhado até agora, descontando pausas) e quantos chamados há em cada."
+        )
+
+        if {"categoria", "status_base", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
+            abertos_atend = dff[
+                dff["status_base"].isin(["New", "InAttendance", "Stopped"])
+                & dff["categoria"].notna()
+                & dff["tempo_vida_horas_uteis_min"].notna()
+            ].copy()
+
+            if abertos_atend.empty:
+                st.info("Nenhum chamado aberto para os filtros atuais.")
+            else:
+                parado_ab = (
+                    abertos_atend["tempo_parado_min"].fillna(0)
+                    if "tempo_parado_min" in abertos_atend.columns else 0
+                )
+                abertos_atend["tempo_atend_horas"] = (
+                    (abertos_atend["tempo_vida_horas_uteis_min"].fillna(0) - parado_ab).clip(lower=0) / 60
+                )
+
+                resumo_ab = (
+                    abertos_atend.groupby("categoria")["tempo_atend_horas"]
+                    .agg(media="mean", qtd="size")
+                    .reset_index()
+                    .sort_values("media", ascending=False)
+                )
+                ordem_ab = resumo_ab["categoria"].tolist()
+                resumo_ab["rotulo"] = (
+                    resumo_ab["media"].round(1).astype(str) + " h · "
+                    + resumo_ab["qtd"].astype(int).astype(str) + " chamado(s)"
+                )
+
+                fig = px.bar(
+                    resumo_ab, x="media", y="categoria", orientation="h", text="rotulo",
+                    category_orders={"categoria": ordem_ab[::-1]},
+                )
+                fig.update_traces(
+                    marker_color=COLOR_SEQUENCE[0], textposition="outside",
+                    hovertemplate="%{y}: %{x:.1f}h úteis em atendimento<extra></extra>",
+                )
+                fig.update_layout(
+                    xaxis_title="Horas úteis em atendimento", yaxis_title="",
+                    xaxis=dict(showgrid=True, gridcolor="#EEF2F6", zeroline=False),
+                )
+                fig.update_layout(height=max(340, 38 * len(resumo_ab) + 110))
+                st.plotly_chart(grafico(fig, "Tempo em atendimento por categoria"), width="stretch")
+        else:
+            st.info("Colunas necessárias (categoria/status/tempo útil) não disponíveis.")
+
+        st.write("")
         st.markdown("##### Incidentes aguardando DEV")
         st.caption(
             "Considera chamados com categoria 'Incidente' e status 'Aguardando' **abertos "
