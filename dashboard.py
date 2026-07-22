@@ -1107,13 +1107,13 @@ with aba_tempo:
                 st.info("Sem tickets fechados com tempo útil e SLA para os filtros atuais.")
 
         st.write("")
-        st.markdown("##### Tempo de atendimento x SLA por justificativa")
+        st.markdown("##### Tempo em atendimento x SLA por justificativa (chamados abertos)")
 
-        if {"justificativa", "tempo_vida_horas_uteis_min", "sla_tempo_solucao_min", "status_base"}.issubset(dff.columns):
-            base_utj = dff[
-                dff["status_base"].isin(["Resolved", "Closed"])
-                & dff["tempo_vida_horas_uteis_min"].notna()
-            ].copy()
+        if {"justificativa", "sla_tempo_solucao_min", "status_base"}.issubset(dff.columns):
+            # A justificativa é o motivo do status atual e some quando o chamado
+            # é fechado; por isso aqui usamos os chamados AINDA abertos (que têm
+            # justificativa). Compara o tempo já em atendimento com a meta de SLA.
+            base_utj = dff[dff["status_base"].isin(["New", "InAttendance", "Stopped"])].copy()
             base_utj["justificativa_lbl"] = (
                 base_utj["justificativa"].fillna("").replace("", "Sem justificativa")
             )
@@ -1121,10 +1121,21 @@ with aba_tempo:
                 base_utj["tempo_parado_min"].fillna(0)
                 if "tempo_parado_min" in base_utj.columns else 0
             )
-            base_utj["tempo_util_min"] = (
-                base_utj["tempo_vida_horas_uteis_min"].fillna(0) + parado_j
-            ).clip(lower=0)
+            # Tempo útil + parado quando o Movidesk já apurou o tempo útil; nos
+            # abertos isso costuma vir vazio, então caímos para o tempo corrido
+            # desde a abertura, pra o chamado não sumir do gráfico.
+            agora_utj = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+            if "tempo_vida_horas_uteis_min" in base_utj.columns:
+                total_utj = base_utj["tempo_vida_horas_uteis_min"] + parado_j
+            else:
+                total_utj = pd.Series(np.nan, index=base_utj.index)
+            if "data_abertura" in base_utj.columns:
+                corrido_utj = (agora_utj - base_utj["data_abertura"]).dt.total_seconds() / 60
+            else:
+                corrido_utj = pd.Series(np.nan, index=base_utj.index)
+            base_utj["tempo_util_min"] = total_utj.where(total_utj.notna(), corrido_utj).clip(lower=0)
             base_utj["sla_min"] = base_utj["sla_tempo_solucao_min"]
+            base_utj = base_utj.dropna(subset=["tempo_util_min"])
 
             top_just = base_utj["justificativa_lbl"].value_counts().head(10).index
             amostra_j = base_utj[base_utj["justificativa_lbl"].isin(top_just)]
@@ -1166,17 +1177,18 @@ with aba_tempo:
                 fig.update_traces(textposition="outside")
                 fig.update_layout(xaxis_title="Horas", yaxis_title="", legend_title="")
                 evento_j = st.plotly_chart(
-                    grafico(fig, "Tempo de atendimento x SLA por justificativa"),
+                    grafico(fig, "Tempo em atendimento x SLA por justificativa (chamados abertos)"),
                     width="stretch",
                     on_select="rerun",
                     selection_mode="points",
                     key="grafico_tempo_util_justificativa",
                 )
                 st.caption(
-                    "Considera os tickets fechados (resolvidos/fechados). Compara, por "
-                    "justificativa, o tempo médio de atendimento (horário comercial, tempo útil + "
-                    "tempo parado) com a meta de SLA de solução. Quando a barra de atendimento passa "
-                    "a do SLA, a justificativa está, em média, estourando o prazo. "
+                    "Considera os chamados ainda abertos (que têm justificativa - ela some quando o "
+                    "chamado é fechado). Compara, por justificativa, o tempo médio já em atendimento "
+                    "(tempo útil + parado quando disponível; senão, tempo corrido desde a abertura) "
+                    "com a meta de SLA de solução. Quando a barra de atendimento passa a do SLA, a "
+                    "justificativa está, em média, estourando o prazo. "
                     "**Clique numa barra para ver os chamados da justificativa.**"
                 )
 
@@ -1207,7 +1219,7 @@ with aba_tempo:
                         key="download_detalhe_tempo_util_just",
                     )
             else:
-                st.info("Sem tickets fechados com tempo útil e SLA para os filtros atuais.")
+                st.info("Sem chamados abertos com justificativa e SLA para os filtros atuais.")
 
         st.write("")
         st.markdown("##### Incidentes aguardando DEV")
