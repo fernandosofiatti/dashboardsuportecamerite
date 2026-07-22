@@ -1167,6 +1167,15 @@ with aba_tempo:
                         + resumo_ab["qtd"].astype(int).astype(str) + " chamado(s)"
                     )
 
+                    # Seletor ACIMA do gráfico (impossível de não ver) - é o
+                    # caminho garantido pra ver os chamados; o clique na barra,
+                    # quando o Streamlit captura, também funciona.
+                    escolha_ab = st.selectbox(
+                        "Ver os chamados de qual justificativa?",
+                        ["(nenhuma)"] + ordem_ab,
+                        key="sel_atend_justificativa",
+                    )
+
                     # color="justificativa_lbl" faz o Plotly montar um trace por
                     # justificativa (multi-trace), igual ao gráfico de categoria
                     # que já funciona - com trace único a seleção por clique do
@@ -1192,16 +1201,8 @@ with aba_tempo:
                         key="grafico_atend_justificativa",
                     )
 
-                    # Detalhamento: aceita o clique na barra (quando o Streamlit
-                    # captura) e também um seletor abaixo, que funciona sempre -
-                    # em algumas versões do Streamlit Cloud o clique em barra não
-                    # dispara a seleção, então o seletor garante o drill-down.
+                    # Combina o clique na barra com a escolha do seletor.
                     just_clicadas = categorias_selecionadas(evento_ab, eixo="y", ordem=ordem_ab)
-                    escolha_ab = st.selectbox(
-                        "Ou selecione a justificativa para ver os chamados:",
-                        ["(nenhuma)"] + ordem_ab,
-                        key="sel_atend_justificativa",
-                    )
                     if not just_clicadas and escolha_ab != "(nenhuma)":
                         just_clicadas = [escolha_ab]
 
