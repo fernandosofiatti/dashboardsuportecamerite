@@ -770,25 +770,44 @@ with aba_equipe:
 
 # --- Tempo & SLA ---------------------------------------------------------------
 def gauge_sla(valor, titulo):
-    """Gauge 0-100% para indicadores de cumprimento de SLA."""
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=round(valor, 1),
-        number={"suffix": "%", "font": {"size": 34, "color": "#1D2939"}},
-        gauge={
-            "axis": {"range": [0, 100], "tickcolor": "#94A3B8", "tickfont": {"size": 10}},
-            "bar": {"color": "#29184E", "thickness": 0.3},
-            "bgcolor": "white",
-            "borderwidth": 0,
-            "steps": [
-                {"range": [0, 70], "color": "#FEE2E2"},
-                {"range": [70, 90], "color": "#FEF3C7"},
-                {"range": [90, 100], "color": "#D1FAE5"},
-            ],
-        },
-        title={"text": titulo, "font": {"size": 14, "color": "#475467"}},
+    """Anel de progresso (donut) 0-100% para cumprimento de SLA.
+
+    Visual mais limpo que o gauge padrão do Plotly: um arco fino sobre uma
+    trilha cinza neutra, com a cor do arco refletindo a performance (verde =
+    bom, âmbar = atenção, vermelho = ruim) e o número grande no centro. Sem
+    faixas coloridas nem números em volta, que deixavam o gráfico poluído."""
+    valor = max(0.0, min(100.0, float(valor)))
+    if valor >= 90:
+        cor = "#14B8A6"      # verde-azulado (bom)
+    elif valor >= 70:
+        cor = "#F59E0B"      # âmbar (atenção)
+    else:
+        cor = "#EF4444"      # vermelho (ruim)
+
+    fig = go.Figure(go.Pie(
+        values=[valor, 100 - valor],
+        hole=0.72,
+        sort=False,
+        direction="clockwise",
+        rotation=0,
+        textinfo="none",
+        hoverinfo="skip",
+        marker=dict(colors=[cor, "#EEF0F3"], line=dict(color="white", width=0)),
+        showlegend=False,
     ))
-    fig.update_layout(height=230, margin=dict(l=25, r=25, t=50, b=10), paper_bgcolor="white")
+    fig.update_layout(
+        height=230,
+        margin=dict(l=10, r=10, t=48, b=10),
+        paper_bgcolor="white",
+        title=dict(
+            text=titulo, x=0.5, xanchor="center", y=0.97,
+            font=dict(size=14, color="#475467"),
+        ),
+        annotations=[dict(
+            text=f"<b>{valor:.1f}%</b>", x=0.5, y=0.5,
+            font=dict(size=32, color=cor), showarrow=False,
+        )],
+    )
     return fig
 
 
