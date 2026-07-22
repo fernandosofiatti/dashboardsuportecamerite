@@ -1102,14 +1102,12 @@ with aba_tempo:
         st.caption(
             "Considera apenas os chamados que estão Em Atendimento (status base 'Em atendimento' "
             "e 'Parado') e agrupa por justificativa. Aqui o tempo é o tempo útil MAIS o tempo "
-            "parado/aguardando (lifeTimeWorkingTime + stoppedTime), em minutos."
+            "parado/aguardando (lifeTimeWorkingTime + stoppedTime), em minutos. Para os chamados "
+            "sem esse tempo útil apurado, usa o tempo corrido desde a abertura."
         )
 
-        if {"justificativa", "status_base", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
-            base_atj = dff[
-                dff["status_base"].isin(["InAttendance", "Stopped"])
-                & dff["tempo_vida_horas_uteis_min"].notna()
-            ].copy()
+        if {"justificativa", "status_base"}.issubset(dff.columns):
+            base_atj = dff[dff["status_base"].isin(["InAttendance", "Stopped"])].copy()
             base_atj["justificativa_lbl"] = (
                 base_atj["justificativa"].fillna("").replace("", "Sem justificativa")
             )
@@ -1117,11 +1115,21 @@ with aba_tempo:
                 base_atj["tempo_parado_min"].fillna(0)
                 if "tempo_parado_min" in base_atj.columns else 0
             )
-            # Aqui é tempo útil + tempo parado (total), diferente do gráfico
-            # acima (que era útil menos as pausas).
-            base_atj["tempo_total_min"] = (
-                base_atj["tempo_vida_horas_uteis_min"].fillna(0) + parado_atj
-            ).clip(lower=0)
+            # Tempo útil + tempo parado (total), em minutos. Nos chamados Em
+            # Atendimento o Movidesk costuma não preencher o lifeTimeWorkingTime
+            # (só nos finalizados); nesse caso caímos para o tempo corrido desde
+            # a abertura, pra o chamado não sumir do gráfico.
+            agora_atj = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+            if "tempo_vida_horas_uteis_min" in base_atj.columns:
+                total_util = base_atj["tempo_vida_horas_uteis_min"] + parado_atj
+            else:
+                total_util = pd.Series(np.nan, index=base_atj.index)
+            if "data_abertura" in base_atj.columns:
+                corrido_min = (agora_atj - base_atj["data_abertura"]).dt.total_seconds() / 60
+            else:
+                corrido_min = pd.Series(np.nan, index=base_atj.index)
+            base_atj["tempo_total_min"] = total_util.where(total_util.notna(), corrido_min).clip(lower=0)
+            base_atj = base_atj.dropna(subset=["tempo_total_min"])
 
             if base_atj.empty:
                 st.info("Nenhum chamado Em Atendimento para os filtros atuais.")
