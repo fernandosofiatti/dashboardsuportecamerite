@@ -1098,6 +1098,106 @@ with aba_tempo:
                 st.info("Sem dados suficientes de tempo útil de atendimento para os filtros atuais.")
 
         st.write("")
+        st.markdown("##### Tempo útil dos chamados Em Atendimento por justificativa")
+        st.caption(
+            "Considera apenas os chamados que estão Em Atendimento (status base 'Em atendimento' "
+            "e 'Parado') e agrupa por justificativa. Aqui o tempo é o tempo útil MAIS o tempo "
+            "parado/aguardando (lifeTimeWorkingTime + stoppedTime), em minutos."
+        )
+
+        if {"justificativa", "status_base", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
+            base_atj = dff[
+                dff["status_base"].isin(["InAttendance", "Stopped"])
+                & dff["tempo_vida_horas_uteis_min"].notna()
+            ].copy()
+            base_atj["justificativa_lbl"] = (
+                base_atj["justificativa"].fillna("").replace("", "Sem justificativa")
+            )
+            parado_atj = (
+                base_atj["tempo_parado_min"].fillna(0)
+                if "tempo_parado_min" in base_atj.columns else 0
+            )
+            # Aqui é tempo útil + tempo parado (total), diferente do gráfico
+            # acima (que era útil menos as pausas).
+            base_atj["tempo_total_min"] = (
+                base_atj["tempo_vida_horas_uteis_min"].fillna(0) + parado_atj
+            ).clip(lower=0)
+
+            if base_atj.empty:
+                st.info("Nenhum chamado Em Atendimento para os filtros atuais.")
+            else:
+                resumo_atj = (
+                    base_atj.groupby("justificativa_lbl")["tempo_total_min"]
+                    .agg(media="mean", mediana="median")
+                    .reset_index()
+                    .sort_values("media", ascending=False)
+                )
+                ordem_just = resumo_atj["justificativa_lbl"].tolist()
+
+                plot_atj = resumo_atj.melt(
+                    id_vars="justificativa_lbl", value_vars=["media", "mediana"],
+                    var_name="metrica", value_name="minutos",
+                )
+                plot_atj["metrica"] = plot_atj["metrica"].map(
+                    {"media": "Tempo médio", "mediana": "Tempo típico (mediana)"}
+                )
+                plot_atj["rotulo"] = plot_atj["minutos"].round(0).astype(int).astype(str) + " min"
+
+                fig = px.bar(
+                    plot_atj, x="minutos", y="justificativa_lbl", color="metrica", orientation="h",
+                    barmode="group", text="rotulo",
+                    category_orders={
+                        "justificativa_lbl": ordem_just[::-1],
+                        "metrica": ["Tempo médio", "Tempo típico (mediana)"],
+                    },
+                    color_discrete_map={
+                        "Tempo médio": COLOR_SEQUENCE[3],
+                        "Tempo típico (mediana)": COLOR_SEQUENCE[0],
+                    },
+                )
+                fig.update_traces(textposition="outside")
+                fig.update_layout(xaxis_title="Minutos (útil + parado)", yaxis_title="", legend_title="")
+                evento_atj = st.plotly_chart(
+                    grafico(fig, "Tempo útil dos chamados Em Atendimento por justificativa"),
+                    width="stretch",
+                    on_select="rerun",
+                    selection_mode="points",
+                    key="grafico_tempo_atj_justificativa",
+                )
+                st.caption(
+                    "O tempo médio pode ser puxado para cima por poucos chamados muito demorados; "
+                    "o tempo típico (mediana) mostra melhor a maioria dos casos. "
+                    "**Clique numa barra para ver os chamados da justificativa.**"
+                )
+
+                just_clicadas_atj = categorias_selecionadas(evento_atj, eixo="y", ordem=ordem_just)
+
+                if just_clicadas_atj:
+                    st.markdown(
+                        "##### Detalhamento — " + ", ".join(str(j) for j in just_clicadas_atj)
+                    )
+                    det_atj = base_atj[base_atj["justificativa_lbl"].isin(just_clicadas_atj)].copy()
+                    det_atj["tempo_total_min"] = det_atj["tempo_total_min"].round(0).astype(int)
+                    colunas_atj = [
+                        c for c in [
+                            "id", "protocolo", "assunto", "categoria", "status",
+                            "justificativa", "urgencia", "responsavel", "equipe_responsavel",
+                            "tempo_vida_horas_uteis_min", "tempo_parado_min", "tempo_total_min",
+                        ] if c in det_atj.columns
+                    ]
+                    det_atj = det_atj[colunas_atj].sort_values("tempo_total_min", ascending=False)
+                    st.caption(f"{len(det_atj)} chamado(s). Tempo (útil + parado) em minutos.")
+                    st.dataframe(det_atj, width="stretch", height=350, hide_index=True)
+                    csv_atj = det_atj.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button(
+                        "⬇️ Baixar detalhamento (CSV)", csv_atj,
+                        "detalhamento_tempo_atendimento_justificativa.csv", "text/csv",
+                        key="download_detalhe_atj",
+                    )
+        else:
+            st.info("Colunas necessárias (justificativa/status/tempo útil) não disponíveis.")
+
+        st.write("")
         st.markdown("##### Incidentes aguardando DEV")
         st.caption(
             "Considera chamados com categoria 'Incidente' e status 'Aguardando' **abertos "
