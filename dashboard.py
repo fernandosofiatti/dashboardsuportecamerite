@@ -535,6 +535,11 @@ with st.sidebar:
     equipe_sel, equipe_opcoes = multiselect_coluna("Equipe responsável", "equipe_responsavel")
 
 mask = pd.Series(True, index=df.index)
+# mask_atributos = mesma coisa, mas sem o filtro de "Período de abertura" -
+# usada pela seção "Incidentes aguardando DEV", que representa uma foto do
+# que está parado AGORA e não deve sumir só porque o chamado foi aberto há
+# mais de 30 dias (ver comentário mais abaixo, junto com df_sem_filtro_data).
+mask_atributos = pd.Series(True, index=df.index)
 
 if isinstance(date_range, tuple) and len(date_range) == 2 and df["data_abertura"].notna().any():
     inicio, fim = date_range
@@ -550,9 +555,16 @@ for coluna, selecionados, opcoes in [
     # (todas selecionadas). Assim, tickets com essa coluna em branco não
     # somem "de graça" - só se o usuário realmente restringir a seleção.
     if coluna in df.columns and set(selecionados) != set(opcoes):
-        mask &= df[coluna].isin(selecionados)
+        cond = df[coluna].isin(selecionados)
+        mask &= cond
+        mask_atributos &= cond
 
 dff = df[mask]
+# Usada só pela seção "Incidentes aguardando DEV": respeita os filtros de
+# status/categoria/urgência/equipe, mas ignora o "Período de abertura" -
+# um chamado aberto há 60 dias e ainda parado em "Aguardando" continua
+# relevante hoje, então não faz sentido escondê-lo só pela data de abertura.
+df_sem_filtro_data = df[mask_atributos]
 
 st.caption(f"Exibindo {len(dff)} de {len(df)} tickets — fonte: Supabase")
 
@@ -921,13 +933,16 @@ with aba_tempo:
         st.caption(
             "Considera chamados com categoria 'Incidente' e status 'Aguardando'. O tempo "
             "parado é calculado a partir da última atualização do chamado e pode passar de "
-            "24h - não é só o horário do dia, é o tempo corrido completo."
+            "24h - não é só o horário do dia, é o tempo corrido completo. **Esta seção não "
+            "usa o filtro \"Período de abertura\"** da barra lateral: ela mostra todos os "
+            "chamados parados agora, independente de quando foram abertos (respeita os "
+            "demais filtros de status/categoria/urgência/equipe)."
         )
 
         colunas_necessarias = {"categoria", "status", "justificativa", "ultima_atualizacao", "id"}
-        if colunas_necessarias.issubset(dff.columns):
-            base_dev = dff[
-                (dff["categoria"] == "Incidente") & (dff["status"] == "Aguardando")
+        if colunas_necessarias.issubset(df_sem_filtro_data.columns):
+            base_dev = df_sem_filtro_data[
+                (df_sem_filtro_data["categoria"] == "Incidente") & (df_sem_filtro_data["status"] == "Aguardando")
             ].dropna(subset=["ultima_atualizacao"]).copy()
 
             if base_dev.empty:
