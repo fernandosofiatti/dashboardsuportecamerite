@@ -1064,56 +1064,78 @@ with aba_tempo:
         st.markdown("##### Tempo em atendimento por categoria (chamados abertos)")
         st.caption(
             "Considera os chamados ainda abertos (novos, em atendimento e parados) e mostra, "
-            "por categoria, há quanto tempo estão em atendimento em horas úteis (horário "
-            "comercial trabalhado até agora, descontando pausas) e quantos chamados há em cada."
+            "por categoria, há quanto tempo estão em atendimento e quantos chamados há em cada. "
+            "Usa horas úteis (horário comercial trabalhado, descontando pausas) quando o "
+            "Movidesk fornece esse dado; para os chamados sem esse tempo apurado, usa o tempo "
+            "corrido desde a abertura."
         )
 
-        if {"categoria", "status_base", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
+        if {"categoria", "status_base"}.issubset(dff.columns):
             abertos_atend = dff[
                 dff["status_base"].isin(["New", "InAttendance", "Stopped"])
                 & dff["categoria"].notna()
-                & dff["tempo_vida_horas_uteis_min"].notna()
             ].copy()
 
             if abertos_atend.empty:
                 st.info("Nenhum chamado aberto para os filtros atuais.")
             else:
-                parado_ab = (
-                    abertos_atend["tempo_parado_min"].fillna(0)
-                    if "tempo_parado_min" in abertos_atend.columns else 0
-                )
-                abertos_atend["tempo_atend_horas"] = (
-                    (abertos_atend["tempo_vida_horas_uteis_min"].fillna(0) - parado_ab).clip(lower=0) / 60
-                )
+                # Tempo útil (quando o lifeTimeWorkingTime está preenchido);
+                # senão, tempo corrido desde a abertura - garante que todo
+                # chamado aberto apareça, mesmo antes da carga completa que
+                # popula os campos de horário útil.
+                agora_atend = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
+                if "tempo_vida_horas_uteis_min" in abertos_atend.columns:
+                    parado_ab = (
+                        abertos_atend["tempo_parado_min"].fillna(0)
+                        if "tempo_parado_min" in abertos_atend.columns else 0
+                    )
+                    util_h = (
+                        (abertos_atend["tempo_vida_horas_uteis_min"] - parado_ab).clip(lower=0) / 60
+                    )
+                else:
+                    util_h = pd.Series(np.nan, index=abertos_atend.index)
 
-                resumo_ab = (
-                    abertos_atend.groupby("categoria")["tempo_atend_horas"]
-                    .agg(media="mean", qtd="size")
-                    .reset_index()
-                    .sort_values("media", ascending=False)
-                )
-                ordem_ab = resumo_ab["categoria"].tolist()
-                resumo_ab["rotulo"] = (
-                    resumo_ab["media"].round(1).astype(str) + " h · "
-                    + resumo_ab["qtd"].astype(int).astype(str) + " chamado(s)"
-                )
+                if "data_abertura" in abertos_atend.columns:
+                    corrido_h = (agora_atend - abertos_atend["data_abertura"]).dt.total_seconds() / 3600
+                else:
+                    corrido_h = pd.Series(np.nan, index=abertos_atend.index)
 
-                fig = px.bar(
-                    resumo_ab, x="media", y="categoria", orientation="h", text="rotulo",
-                    category_orders={"categoria": ordem_ab[::-1]},
-                )
-                fig.update_traces(
-                    marker_color=COLOR_SEQUENCE[0], textposition="outside",
-                    hovertemplate="%{y}: %{x:.1f}h úteis em atendimento<extra></extra>",
-                )
-                fig.update_layout(
-                    xaxis_title="Horas úteis em atendimento", yaxis_title="",
-                    xaxis=dict(showgrid=True, gridcolor="#EEF2F6", zeroline=False),
-                )
-                fig.update_layout(height=max(340, 38 * len(resumo_ab) + 110))
-                st.plotly_chart(grafico(fig, "Tempo em atendimento por categoria"), width="stretch")
+                abertos_atend["tempo_atend_horas"] = util_h.where(util_h.notna(), corrido_h)
+                abertos_atend = abertos_atend.dropna(subset=["tempo_atend_horas"])
+
+                # Se nem tempo útil nem data de abertura existirem, não há o
+                # que plotar (não deveria acontecer, mas evita erro).
+                if abertos_atend.empty:
+                    st.info("Sem tempo apurado para os chamados abertos nos filtros atuais.")
+                else:
+                    resumo_ab = (
+                        abertos_atend.groupby("categoria")["tempo_atend_horas"]
+                        .agg(media="mean", qtd="size")
+                        .reset_index()
+                        .sort_values("media", ascending=False)
+                    )
+                    ordem_ab = resumo_ab["categoria"].tolist()
+                    resumo_ab["rotulo"] = (
+                        resumo_ab["media"].round(1).astype(str) + " h · "
+                        + resumo_ab["qtd"].astype(int).astype(str) + " chamado(s)"
+                    )
+
+                    fig = px.bar(
+                        resumo_ab, x="media", y="categoria", orientation="h", text="rotulo",
+                        category_orders={"categoria": ordem_ab[::-1]},
+                    )
+                    fig.update_traces(
+                        marker_color=COLOR_SEQUENCE[0], textposition="outside",
+                        hovertemplate="%{y}: %{x:.1f}h em atendimento<extra></extra>",
+                    )
+                    fig.update_layout(
+                        xaxis_title="Horas em atendimento", yaxis_title="",
+                        xaxis=dict(showgrid=True, gridcolor="#EEF2F6", zeroline=False),
+                        height=max(340, 38 * len(resumo_ab) + 110),
+                    )
+                    st.plotly_chart(grafico(fig, "Tempo em atendimento por categoria"), width="stretch")
         else:
-            st.info("Colunas necessárias (categoria/status/tempo útil) não disponíveis.")
+            st.info("Colunas necessárias (categoria/status) não disponíveis.")
 
         st.write("")
         st.markdown("##### Incidentes aguardando DEV")
