@@ -997,16 +997,19 @@ with aba_tempo:
             st.info("Coluna 'tags' não disponível.")
 
         st.write("")
-        st.markdown("##### Tempo de atendimento por categoria")
+        st.markdown("##### Tempo de atendimento x SLA por categoria")
 
-        if {"categoria", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
-            # Tempo ÚTIL de atendimento = tempo de vida em horário comercial
-            # (lifeTimeWorkingTime do Movidesk) menos o tempo em que o chamado
-            # ficou parado/aguardando (stoppedTime), em minutos.
-            # Diferente do tempo corrido (data_resolucao - data_abertura), este
-            # desconta noites, fins de semana e pausas - é o "tempo de mão na
-            # massa" de atendimento.
-            base_util = dff[dff["categoria"].notna() & dff["tempo_vida_horas_uteis_min"].notna()].copy()
+        if {"categoria", "tempo_vida_horas_uteis_min", "sla_tempo_solucao_min", "status_base"}.issubset(dff.columns):
+            # Comparativo por categoria: tempo médio ÚTIL de atendimento dos
+            # tickets FECHADOS (resolvidos/fechados) contra a meta de SLA de
+            # solução (média do sla_tempo_solucao_min), tudo em minutos.
+            # Tempo útil = lifeTimeWorkingTime menos o tempo parado (stoppedTime)
+            # - desconta noites, fins de semana e pausas.
+            base_util = dff[
+                dff["categoria"].notna()
+                & dff["status_base"].isin(["Resolved", "Closed"])
+                & dff["tempo_vida_horas_uteis_min"].notna()
+            ].copy()
             parado = (
                 base_util["tempo_parado_min"].fillna(0)
                 if "tempo_parado_min" in base_util.columns else 0
@@ -1014,58 +1017,57 @@ with aba_tempo:
             base_util["tempo_util_min"] = (
                 base_util["tempo_vida_horas_uteis_min"].fillna(0) - parado
             ).clip(lower=0)
+            base_util["sla_min"] = base_util["sla_tempo_solucao_min"]
 
             top_cats = base_util["categoria"].value_counts().head(10).index
             amostra = base_util[base_util["categoria"].isin(top_cats)]
             if not amostra.empty:
                 resumo = (
-                    amostra.groupby("categoria")["tempo_util_min"]
-                    .agg(media="mean", mediana="median")
+                    amostra.groupby("categoria")
+                    .agg(media=("tempo_util_min", "mean"), sla=("sla_min", "mean"))
                     .reset_index()
                     .sort_values("media", ascending=False)
                 )
                 ordem_cats = resumo["categoria"].tolist()
 
                 plot_df = resumo.melt(
-                    id_vars="categoria", value_vars=["media", "mediana"],
+                    id_vars="categoria", value_vars=["media", "sla"],
                     var_name="metrica", value_name="minutos",
                 )
                 plot_df["metrica"] = plot_df["metrica"].map(
-                    {"media": "Tempo médio", "mediana": "Tempo típico (mediana)"}
+                    {"media": "Tempo médio de atendimento", "sla": "SLA (meta)"}
                 )
-                plot_df["rotulo"] = plot_df["minutos"].round(0).astype(int).astype(str) + " min"
+                plot_df["rotulo"] = plot_df["minutos"].apply(
+                    lambda v: f"{int(round(v))} min" if pd.notna(v) else ""
+                )
 
                 fig = px.bar(
                     plot_df, x="minutos", y="categoria", color="metrica", orientation="h",
                     barmode="group", text="rotulo",
                     category_orders={
                         "categoria": ordem_cats[::-1],
-                        "metrica": ["Tempo médio", "Tempo típico (mediana)"],
+                        "metrica": ["Tempo médio de atendimento", "SLA (meta)"],
                     },
                     color_discrete_map={
-                        "Tempo médio": COLOR_SEQUENCE[3],
-                        "Tempo típico (mediana)": COLOR_SEQUENCE[0],
+                        "Tempo médio de atendimento": COLOR_SEQUENCE[3],
+                        "SLA (meta)": COLOR_SEQUENCE[9],
                     },
                 )
                 fig.update_traces(textposition="outside")
-                fig.update_layout(xaxis_title="Minutos úteis de atendimento", yaxis_title="", legend_title="")
-                # on_select="rerun": ao clicar numa barra, o Streamlit reexecuta
-                # o app e devolve o ponto clicado - usamos isso pra abrir o
-                # detalhamento dos chamados daquela categoria logo abaixo.
+                fig.update_layout(xaxis_title="Minutos", yaxis_title="", legend_title="")
                 evento = st.plotly_chart(
-                    grafico(fig, "Tempo útil de atendimento por categoria"),
+                    grafico(fig, "Tempo útil de atendimento x SLA por categoria"),
                     width="stretch",
                     on_select="rerun",
                     selection_mode="points",
                     key="grafico_tempo_util_categoria",
                 )
                 st.caption(
-                    "Tempo útil = tempo de vida em horário comercial (minutos úteis) menos o "
-                    "tempo em que o chamado ficou parado/aguardando - desconta noites, fins de "
-                    "semana e pausas. O tempo médio pode ser puxado para cima por poucos "
-                    "chamados muito demorados; o tempo típico (mediana) mostra melhor a maioria "
-                    "dos casos: metade dos chamados dessa categoria leva menos tempo que isso, e "
-                    "a outra metade mais. **Clique numa barra para ver os chamados da categoria.**"
+                    "Considera os tickets fechados (resolvidos/fechados). Compara, por categoria, "
+                    "o tempo médio útil de atendimento (horário comercial, descontando pausas) com "
+                    "a meta de SLA de solução. Quando a barra de atendimento passa a do SLA, a "
+                    "categoria está, em média, estourando o prazo. "
+                    "**Clique numa barra para ver os chamados da categoria.**"
                 )
 
                 # Detalhamento: categorias das barras clicadas (numa barra
@@ -1083,19 +1085,20 @@ with aba_tempo:
                             "id", "protocolo", "assunto", "categoria", "status",
                             "urgencia", "responsavel", "equipe_responsavel",
                             "tempo_vida_horas_uteis_min", "tempo_parado_min", "tempo_util_min",
+                            "sla_tempo_solucao_min",
                         ] if c in detalhe.columns
                     ]
                     detalhe = detalhe[colunas_det].sort_values("tempo_util_min", ascending=False)
-                    st.caption(f"{len(detalhe)} chamado(s). Tempo útil em minutos.")
+                    st.caption(f"{len(detalhe)} chamado(s). Tempo útil e SLA em minutos.")
                     st.dataframe(detalhe, width="stretch", height=350, hide_index=True)
                     csv_det = detalhe.to_csv(index=False).encode("utf-8-sig")
                     st.download_button(
                         "⬇️ Baixar detalhamento (CSV)", csv_det,
-                        "detalhamento_tempo_util.csv", "text/csv",
+                        "detalhamento_tempo_util_sla.csv", "text/csv",
                         key="download_detalhe_tempo_util",
                     )
             else:
-                st.info("Sem dados suficientes de tempo útil de atendimento para os filtros atuais.")
+                st.info("Sem tickets fechados com tempo útil e SLA para os filtros atuais.")
 
         st.write("")
         st.markdown("##### Incidentes aguardando DEV")
