@@ -89,6 +89,7 @@ COLUMNS = [
     ("sla_contrato", "text"),
     ("sla_tempo_solucao_min", "integer"),
     ("sla_tempo_resposta_min", "integer"),
+    ("sla_data_limite_solucao", "timestamp"),
     ("tempo_ate_resolucao_horas", "double precision"),
     ("tempo_ate_fechamento_horas", "double precision"),
 ]
@@ -163,7 +164,37 @@ def get_table() -> Table:
 
 
 def ensure_table():
-    _metadata.create_all(get_engine(), tables=[get_table()], checkfirst=True)
+    engine = get_engine()
+    _metadata.create_all(engine, tables=[get_table()], checkfirst=True)
+    _adicionar_colunas_faltantes(engine)
+
+
+def _adicionar_colunas_faltantes(engine):
+    """Adiciona no banco as colunas de COLUMNS que ainda não existem na tabela.
+
+    O create_all(checkfirst=True) só CRIA a tabela quando ela não existe - ele
+    não mexe numa tabela já existente. Então, quando adicionamos uma coluna
+    nova em COLUMNS (ex.: sla_data_limite_solucao), a tabela antiga no Supabase
+    continuaria sem ela e o INSERT quebraria. Aqui comparamos as colunas
+    esperadas com as que existem de fato e criamos o que faltar, de forma
+    idempotente (ADD COLUMN IF NOT EXISTS)."""
+    with engine.begin() as conn:
+        existentes = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = :t"
+                ),
+                {"t": TABLE_NAME},
+            )
+        }
+        for name, tipo in COLUMNS:
+            if name not in existentes:
+                tipo_sql = tipo.replace("PRIMARY KEY", "").strip()
+                conn.execute(
+                    text(f'ALTER TABLE {TABLE_NAME} ADD COLUMN IF NOT EXISTS "{name}" {tipo_sql}')
+                )
 
 
 # Nome da coluna -> tipo SQL "base" (sem o "PRIMARY KEY"), para saber quando

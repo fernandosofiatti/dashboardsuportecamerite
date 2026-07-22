@@ -121,6 +121,7 @@ SELECT_FIELDS = [
     "slaAgreement",
     "slaSolutionTime",
     "slaResponseTime",
+    "slaSolutionDate",
     "clients",
 ]
 
@@ -276,6 +277,10 @@ def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
             "sla_contrato": t.get("slaAgreement"),
             "sla_tempo_solucao_min": t.get("slaSolutionTime"),
             "sla_tempo_resposta_min": t.get("slaResponseTime"),
+            # Data-limite de solução já calculada pelo Movidesk (respeita
+            # horário comercial e pausas) - base do cálculo de cumprimento
+            # de SLA no dashboard.
+            "sla_data_limite_solucao": t.get("slaSolutionDate"),
         })
 
     df = pd.DataFrame(rows)
@@ -284,6 +289,7 @@ def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
     date_cols = [
         "data_abertura", "data_resolucao", "data_fechamento",
         "data_reabertura", "ultima_acao", "ultima_atualizacao",
+        "sla_data_limite_solucao",
     ]
     for col in date_cols:
         df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)

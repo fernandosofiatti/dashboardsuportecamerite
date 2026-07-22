@@ -41,6 +41,7 @@ DATA_FILE = os.path.join(SCRIPT_DIR, movidesk.OUTPUT_FILE)
 DATE_COLS = [
     "data_abertura", "data_resolucao", "data_fechamento",
     "data_reabertura", "ultima_acao", "ultima_atualizacao",
+    "sla_data_limite_solucao",
 ]
 
 ORIGIN_LABELS = {
@@ -353,15 +354,22 @@ GRUPO_CORES = {"Finalizado": COLOR_SEQUENCE[0], "Em atendimento": COLOR_SEQUENCE
 
 
 def calcular_prazo(df_in: pd.DataFrame) -> pd.DataFrame:
-    """Calcula, para tickets já atendidos (exclui status 'Novo'), se o SLA foi
-    cumprido - usado tanto na aba Tempo & SLA quanto na Causa Raiz & Prazo,
-    para os números baterem nas duas.
+    """Calcula, para tickets já atendidos (exclui status 'Novo'), se o SLA de
+    solução foi cumprido - usado tanto na aba Tempo & SLA quanto na Causa Raiz
+    & Prazo, para os números baterem nas duas.
 
-    - Finalizados (resolvidos/fechados): compara tempo até fechamento com o
-      SLA de solução ("No prazo" / "Fora do prazo").
-    - Em atendimento: compara o tempo já decorrido desde a abertura com o
-      SLA de solução ("Dentro do prazo" / "Estourado").
-    - Sem SLA cadastrado no ticket: "Sem SLA definido".
+    Usa a data-limite de solução calculada pelo próprio Movidesk
+    (sla_data_limite_solucao = slaSolutionDate), que já respeita o horário
+    comercial e o tempo em que o chamado ficou parado/aguardando. Assim não
+    precisamos refazer essa conta com tempo corrido (que contaria noites e
+    fins de semana indevidamente).
+
+    - Finalizados (resolvidos/fechados): compara a data de RESOLUÇÃO com a
+      data-limite ("No prazo" / "Fora do prazo"). Se não houver data de
+      resolução, cai para a data de fechamento.
+    - Em atendimento: compara "agora" com a data-limite ("Dentro do prazo" /
+      "Estourado").
+    - Sem data-limite cadastrada no ticket: "Sem SLA definido".
     """
     d = df_in[df_in["status_base"] != "New"].copy() if "status_base" in df_in.columns else df_in.copy()
     if d.empty:
@@ -371,19 +379,22 @@ def calcular_prazo(df_in: pd.DataFrame) -> pd.DataFrame:
         d["status_base"].isin(["Resolved", "Closed"]), "Finalizado", "Em atendimento"
     )
     agora = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
-    d["sla_horas"] = d["sla_tempo_solucao_min"] / 60 if "sla_tempo_solucao_min" in d.columns else np.nan
+    tem_limite = "sla_data_limite_solucao" in d.columns
 
     def _prazo_status(row):
-        if pd.isna(row.get("sla_horas")):
+        limite = row.get("sla_data_limite_solucao") if tem_limite else None
+        if limite is None or pd.isna(limite):
             return "Sem SLA definido"
         if row["grupo_atendimento"] == "Finalizado":
-            if pd.isna(row.get("tempo_ate_fechamento_horas")):
+            # SLA de solução é medido até a resolução (resolvedIn); só se não
+            # houver, usamos o fechamento como aproximação.
+            solucao = row.get("data_resolucao")
+            if pd.isna(solucao):
+                solucao = row.get("data_fechamento")
+            if pd.isna(solucao):
                 return "Sem SLA definido"
-            return "No prazo" if row["tempo_ate_fechamento_horas"] <= row["sla_horas"] else "Fora do prazo"
-        if pd.isna(row.get("data_abertura")):
-            return "Sem SLA definido"
-        decorrido = (agora - row["data_abertura"]).total_seconds() / 3600
-        return "Estourado" if decorrido > row["sla_horas"] else "Dentro do prazo"
+            return "No prazo" if solucao <= limite else "Fora do prazo"
+        return "Estourado" if agora > limite else "Dentro do prazo"
 
     d["prazo_status"] = d.apply(_prazo_status, axis=1)
     return d
@@ -784,7 +795,10 @@ def gauge_sla(valor, titulo):
 with aba_tempo:
     st.caption(
         "Cumprimento de SLA considera tickets já atendidos (finalizados ou "
-        "em atendimento) que têm um SLA de solução cadastrado no Movidesk."
+        "em atendimento) que têm data-limite de solução calculada pelo Movidesk "
+        "(que já respeita o horário comercial e as pausas). Finalizados são "
+        "avaliados pela data de resolução; em atendimento, pela data-limite "
+        "comparada com o momento atual."
     )
 
     if dcr.empty:
