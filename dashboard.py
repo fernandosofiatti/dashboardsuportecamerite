@@ -866,14 +866,27 @@ with aba_tempo:
         st.write("")
         st.markdown("##### Tempo de atendimento por categoria")
 
-        if {"categoria", "tempo_ate_resolucao_horas"}.issubset(dff.columns):
-            top_cats = dff["categoria"].value_counts().head(10).index
-            amostra = dff[
-                dff["categoria"].isin(top_cats) & dff["tempo_ate_resolucao_horas"].notna()
-            ]
+        if {"categoria", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
+            # Tempo ÚTIL de atendimento = tempo de vida em horário comercial
+            # (lifetimeWorkingTime do Movidesk) menos o tempo em que o chamado
+            # ficou parado/aguardando (stoppedTime), convertido para horas.
+            # Diferente do tempo corrido (data_resolucao - data_abertura), este
+            # desconta noites, fins de semana e pausas - é o "tempo de mão na
+            # massa" de atendimento.
+            base_util = dff[dff["categoria"].notna() & dff["tempo_vida_horas_uteis_min"].notna()].copy()
+            parado = (
+                base_util["tempo_parado_min"].fillna(0)
+                if "tempo_parado_min" in base_util.columns else 0
+            )
+            base_util["tempo_util_horas"] = (
+                (base_util["tempo_vida_horas_uteis_min"].fillna(0) - parado) / 60
+            ).clip(lower=0)
+
+            top_cats = base_util["categoria"].value_counts().head(10).index
+            amostra = base_util[base_util["categoria"].isin(top_cats)]
             if not amostra.empty:
                 resumo = (
-                    amostra.groupby("categoria")["tempo_ate_resolucao_horas"]
+                    amostra.groupby("categoria")["tempo_util_horas"]
                     .agg(media="mean", mediana="median")
                     .reset_index()
                     .sort_values("media", ascending=False)
@@ -902,19 +915,21 @@ with aba_tempo:
                     },
                 )
                 fig.update_traces(textposition="outside")
-                fig.update_layout(xaxis_title="Horas até resolução", yaxis_title="", legend_title="")
+                fig.update_layout(xaxis_title="Horas úteis de atendimento", yaxis_title="", legend_title="")
                 st.plotly_chart(
-                    grafico(fig, "Tempo até resolução por categoria (top 10 por volume)"),
+                    grafico(fig, "Tempo útil de atendimento por categoria (top 10 por volume)"),
                     width="stretch",
                 )
                 st.caption(
-                    "O tempo médio pode ser puxado para cima por poucos tickets muito demorados. "
-                    "O tempo típico (mediana) mostra melhor o que acontece na maioria dos casos: "
-                    "metade dos tickets dessa categoria resolve em menos tempo que isso, e a "
-                    "outra metade em mais."
+                    "Tempo útil = tempo de vida em horário comercial (horas úteis) menos o "
+                    "tempo em que o chamado ficou parado/aguardando - desconta noites, fins de "
+                    "semana e pausas. O tempo médio pode ser puxado para cima por poucos "
+                    "chamados muito demorados; o tempo típico (mediana) mostra melhor a maioria "
+                    "dos casos: metade dos chamados dessa categoria leva menos tempo que isso, e "
+                    "a outra metade mais."
                 )
             else:
-                st.info("Sem dados suficientes de tempo até resolução para os filtros atuais.")
+                st.info("Sem dados suficientes de tempo útil de atendimento para os filtros atuais.")
 
         st.write("")
         st.markdown("##### Incidentes aguardando DEV")
