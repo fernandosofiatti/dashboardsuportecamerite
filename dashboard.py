@@ -868,7 +868,7 @@ with aba_tempo:
 
         if {"categoria", "tempo_vida_horas_uteis_min"}.issubset(dff.columns):
             # Tempo ÚTIL de atendimento = tempo de vida em horário comercial
-            # (lifetimeWorkingTime do Movidesk) menos o tempo em que o chamado
+            # (lifeTimeWorkingTime do Movidesk) menos o tempo em que o chamado
             # ficou parado/aguardando (stoppedTime), convertido para horas.
             # Diferente do tempo corrido (data_resolucao - data_abertura), este
             # desconta noites, fins de semana e pausas - é o "tempo de mão na
