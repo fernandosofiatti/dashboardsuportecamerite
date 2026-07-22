@@ -981,12 +981,32 @@ with aba_tempo:
                 # KPI consolidado, abaixo dos dois gráficos: tempo médio de
                 # TODOS os chamados no time de Desenvolvimento (Análise DEV +
                 # Correção DEV juntos), respeitando os mesmos filtros.
+                # Feito com HTML próprio (em vez de st.metric) só para poder
+                # centralizar o rótulo e o valor - o st.metric alinha à
+                # esquerda e não dá pra centralizar apenas um card.
                 dev = base_dev[base_dev["justificativa"].isin(["Análise DEV", "Correção DEV"])]
                 if not dev.empty:
-                    st.metric(
-                        "Tempo médio total no Desenvolvimento (Análise + Correção DEV)",
-                        f"{dev['horas_parado'].mean():.1f} h",
-                        help=f"Média do tempo parado de {len(dev)} chamado(s) em Análise DEV e Correção DEV.",
+                    st.markdown(
+                        f"""
+                        <div style="background:white; border:1px solid #E4E7EC;
+                             border-top:4px solid #7B48EA; border-radius:8px;
+                             padding:1rem; margin-top:0.5rem; text-align:center;
+                             box-shadow:0 1px 3px rgba(16,24,40,0.06);">
+                            <div style="font-weight:700; color:#667085;
+                                 text-transform:uppercase; font-size:0.72rem;
+                                 letter-spacing:0.04em;">
+                                Tempo médio total no Desenvolvimento (Análise + Correção DEV)
+                            </div>
+                            <div style="font-weight:700; color:#1D2939;
+                                 font-size:2rem; margin-top:0.25rem;">
+                                {dev['horas_parado'].mean():.1f} h
+                            </div>
+                            <div style="color:#98A2B3; font-size:0.72rem;">
+                                Média de {len(dev)} chamado(s) em Análise DEV + Correção DEV
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
                     )
         else:
             st.info("Colunas necessárias (categoria/status/justificativa/ultima_atualizacao/id) não disponíveis.")
