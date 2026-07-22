@@ -302,6 +302,42 @@ def grafico(fig, titulo=None):
     return fig
 
 
+def categorias_selecionadas(evento, eixo="y"):
+    """Lê, de forma robusta, os rótulos clicados num gráfico com on_select.
+
+    O objeto devolvido pelo st.plotly_chart(on_select=...) pode expor a
+    seleção como atributo (evento.selection.points) ou como dicionário
+    (evento["selection"]["points"]), dependendo da versão do Streamlit.
+    Aqui tentamos as duas formas e ainda cobrimos nomes de chave
+    alternativos ('y'/'label') que o Plotly usa para a categoria dependendo
+    do tipo de gráfico. Retorna uma lista ordenada de rótulos."""
+    if not evento:
+        return []
+
+    selecao = getattr(evento, "selection", None)
+    if selecao is None and isinstance(evento, dict):
+        selecao = evento.get("selection")
+    if selecao is None:
+        return []
+
+    pontos = getattr(selecao, "points", None)
+    if pontos is None and isinstance(selecao, dict):
+        pontos = selecao.get("points")
+    if not pontos:
+        return []
+
+    rotulos = set()
+    for p in pontos:
+        valor = None
+        if isinstance(p, dict):
+            valor = p.get(eixo) or p.get("label")
+        else:
+            valor = getattr(p, eixo, None) or getattr(p, "label", None)
+        if valor is not None and valor != "":
+            rotulos.add(valor)
+    return sorted(rotulos)
+
+
 def hex_para_rgba(hex_color: str, alpha: float) -> str:
     """Converte uma cor hexadecimal (ex.: '#7B48EA') numa string rgba com a
     transparência (alpha) informada - usado para preencher a área abaixo das
@@ -1015,6 +1051,7 @@ with aba_tempo:
                     grafico(fig, "Tempo útil de atendimento por categoria"),
                     width="stretch",
                     on_select="rerun",
+                    selection_mode="points",
                     key="grafico_tempo_util_categoria",
                 )
                 st.caption(
@@ -1028,12 +1065,7 @@ with aba_tempo:
 
                 # Detalhamento: categorias das barras clicadas (numa barra
                 # horizontal, a categoria fica no eixo Y de cada ponto).
-                pontos = []
-                try:
-                    pontos = evento.selection.points if evento and evento.selection else []
-                except AttributeError:
-                    pontos = []
-                cats_clicadas = sorted({p.get("y") for p in pontos if p.get("y")})
+                cats_clicadas = categorias_selecionadas(evento, eixo="y")
 
                 if cats_clicadas:
                     st.markdown(
@@ -1139,16 +1171,12 @@ with aba_tempo:
                         grafico(fig, "Tempo em atendimento por justificativa"),
                         width="stretch",
                         on_select="rerun",
+                        selection_mode="points",
                         key="grafico_atend_justificativa",
                     )
 
                     # Detalhamento das justificativas clicadas.
-                    pontos_ab = []
-                    try:
-                        pontos_ab = evento_ab.selection.points if evento_ab and evento_ab.selection else []
-                    except AttributeError:
-                        pontos_ab = []
-                    just_clicadas = sorted({p.get("y") for p in pontos_ab if p.get("y")})
+                    just_clicadas = categorias_selecionadas(evento_ab, eixo="y")
 
                     if just_clicadas:
                         st.markdown("##### Detalhamento — " + ", ".join(str(j) for j in just_clicadas))
