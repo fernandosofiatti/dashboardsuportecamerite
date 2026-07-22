@@ -1065,20 +1065,12 @@ with aba_tempo:
                     "semana e pausas. O tempo médio pode ser puxado para cima por poucos "
                     "chamados muito demorados; o tempo típico (mediana) mostra melhor a maioria "
                     "dos casos: metade dos chamados dessa categoria leva menos tempo que isso, e "
-                    "a outra metade mais. **Clique numa barra (ou use o seletor) para ver os chamados.**"
+                    "a outra metade mais. **Clique numa barra para ver os chamados da categoria.**"
                 )
 
-                # Detalhamento: aceita o clique na barra e também um seletor
-                # abaixo (o clique em barra nem sempre dispara a seleção no
-                # Streamlit Cloud, então o seletor garante o drill-down).
+                # Detalhamento: categorias das barras clicadas (numa barra
+                # horizontal, a categoria fica no eixo Y de cada ponto).
                 cats_clicadas = categorias_selecionadas(evento, eixo="y", ordem=ordem_cats)
-                escolha_cat = st.selectbox(
-                    "Ou selecione a categoria para ver os chamados:",
-                    ["(nenhuma)"] + ordem_cats,
-                    key="sel_tempo_util_categoria",
-                )
-                if not cats_clicadas and escolha_cat != "(nenhuma)":
-                    cats_clicadas = [escolha_cat]
 
                 if cats_clicadas:
                     st.markdown(
@@ -1104,130 +1096,6 @@ with aba_tempo:
                     )
             else:
                 st.info("Sem dados suficientes de tempo útil de atendimento para os filtros atuais.")
-
-        st.write("")
-        st.markdown("##### Tempo em atendimento por justificativa (chamados abertos)")
-        st.caption(
-            "Considera os chamados ainda abertos (novos, em atendimento e parados) e mostra, "
-            "por justificativa, há quanto tempo estão em atendimento e quantos chamados há em "
-            "cada. Usa horas úteis (horário comercial trabalhado, descontando pausas) quando o "
-            "Movidesk fornece esse dado; para os chamados sem esse tempo apurado, usa o tempo "
-            "corrido desde a abertura. **Clique numa barra para ver os chamados.**"
-        )
-
-        if {"justificativa", "status_base"}.issubset(dff.columns):
-            abertos_atend = dff[
-                dff["status_base"].isin(["New", "InAttendance", "Stopped"])
-            ].copy()
-            abertos_atend["justificativa_lbl"] = (
-                abertos_atend["justificativa"].fillna("").replace("", "Sem justificativa")
-            )
-
-            if abertos_atend.empty:
-                st.info("Nenhum chamado aberto para os filtros atuais.")
-            else:
-                # Tempo útil (quando o lifeTimeWorkingTime está preenchido);
-                # senão, tempo corrido desde a abertura - garante que todo
-                # chamado aberto apareça, mesmo antes da carga completa que
-                # popula os campos de horário útil.
-                agora_atend = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
-                if "tempo_vida_horas_uteis_min" in abertos_atend.columns:
-                    parado_ab = (
-                        abertos_atend["tempo_parado_min"].fillna(0)
-                        if "tempo_parado_min" in abertos_atend.columns else 0
-                    )
-                    util_h = (
-                        (abertos_atend["tempo_vida_horas_uteis_min"] - parado_ab).clip(lower=0) / 60
-                    )
-                else:
-                    util_h = pd.Series(np.nan, index=abertos_atend.index)
-
-                if "data_abertura" in abertos_atend.columns:
-                    corrido_h = (agora_atend - abertos_atend["data_abertura"]).dt.total_seconds() / 3600
-                else:
-                    corrido_h = pd.Series(np.nan, index=abertos_atend.index)
-
-                abertos_atend["tempo_atend_horas"] = util_h.where(util_h.notna(), corrido_h)
-                abertos_atend = abertos_atend.dropna(subset=["tempo_atend_horas"])
-
-                # Se nem tempo útil nem data de abertura existirem, não há o
-                # que plotar (não deveria acontecer, mas evita erro).
-                if abertos_atend.empty:
-                    st.info("Sem tempo apurado para os chamados abertos nos filtros atuais.")
-                else:
-                    resumo_ab = (
-                        abertos_atend.groupby("justificativa_lbl")["tempo_atend_horas"]
-                        .agg(media="mean", qtd="size")
-                        .reset_index()
-                        .sort_values("media", ascending=False)
-                    )
-                    ordem_ab = resumo_ab["justificativa_lbl"].tolist()
-                    resumo_ab["rotulo"] = (
-                        resumo_ab["media"].round(1).astype(str) + " h · "
-                        + resumo_ab["qtd"].astype(int).astype(str) + " chamado(s)"
-                    )
-
-                    # Seletor ACIMA do gráfico (impossível de não ver) - é o
-                    # caminho garantido pra ver os chamados; o clique na barra,
-                    # quando o Streamlit captura, também funciona.
-                    escolha_ab = st.selectbox(
-                        "Ver os chamados de qual justificativa?",
-                        ["(nenhuma)"] + ordem_ab,
-                        key="sel_atend_justificativa",
-                    )
-
-                    # color="justificativa_lbl" faz o Plotly montar um trace por
-                    # justificativa (multi-trace), igual ao gráfico de categoria
-                    # que já funciona - com trace único a seleção por clique do
-                    # Streamlit não dispara de forma confiável em barra.
-                    fig = px.bar(
-                        resumo_ab, x="media", y="justificativa_lbl", orientation="h", text="rotulo",
-                        color="justificativa_lbl",
-                        category_orders={"justificativa_lbl": ordem_ab[::-1]},
-                        color_discrete_sequence=COLOR_SEQUENCE,
-                    )
-                    fig.update_traces(textposition="outside")
-                    fig.update_layout(
-                        showlegend=False,
-                        xaxis_title="Horas em atendimento", yaxis_title="",
-                        xaxis=dict(showgrid=True, gridcolor="#EEF2F6", zeroline=False),
-                        height=max(340, 38 * len(resumo_ab) + 110),
-                    )
-                    evento_ab = st.plotly_chart(
-                        grafico(fig, "Tempo em atendimento por justificativa"),
-                        width="stretch",
-                        on_select="rerun",
-                        selection_mode="points",
-                        key="grafico_atend_justificativa",
-                    )
-
-                    # Combina o clique na barra com a escolha do seletor.
-                    just_clicadas = categorias_selecionadas(evento_ab, eixo="y", ordem=ordem_ab)
-                    if not just_clicadas and escolha_ab != "(nenhuma)":
-                        just_clicadas = [escolha_ab]
-
-                    if just_clicadas:
-                        st.markdown("##### Detalhamento — " + ", ".join(str(j) for j in just_clicadas))
-                        det_ab = abertos_atend[abertos_atend["justificativa_lbl"].isin(just_clicadas)].copy()
-                        det_ab["tempo_atend_horas"] = det_ab["tempo_atend_horas"].round(1)
-                        colunas_ab = [
-                            c for c in [
-                                "id", "protocolo", "assunto", "categoria", "status",
-                                "justificativa", "urgencia", "responsavel", "equipe_responsavel",
-                                "tempo_atend_horas",
-                            ] if c in det_ab.columns
-                        ]
-                        det_ab = det_ab[colunas_ab].sort_values("tempo_atend_horas", ascending=False)
-                        st.caption(f"{len(det_ab)} chamado(s). Tempo em atendimento em horas.")
-                        st.dataframe(det_ab, width="stretch", height=350, hide_index=True)
-                        csv_ab = det_ab.to_csv(index=False).encode("utf-8-sig")
-                        st.download_button(
-                            "⬇️ Baixar detalhamento (CSV)", csv_ab,
-                            "detalhamento_atendimento_justificativa.csv", "text/csv",
-                            key="download_detalhe_atend_justificativa",
-                        )
-        else:
-            st.info("Colunas necessárias (justificativa/status) não disponíveis.")
 
         st.write("")
         st.markdown("##### Incidentes aguardando DEV")
