@@ -901,7 +901,7 @@ with aba_tempo:
                 tags_sla["tag"] = tags_sla["tag"].str.strip().replace("", "Sem tag")
 
                 top_tags_sla = list(
-                    tags_sla.groupby("tag").size().sort_values(ascending=False).head(10).index
+                    tags_sla.groupby("tag").size().sort_values(ascending=False).head(15).index
                 )
                 tags_sla = tags_sla[tags_sla["tag"].isin(top_tags_sla)]
 
@@ -946,6 +946,8 @@ with aba_tempo:
                     xaxis=dict(range=[0, 100], ticksuffix="%", showgrid=False, zeroline=False),
                     yaxis=dict(showgrid=False),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    # Altura proporcional ao nº de tags pra não espremer as barras.
+                    height=max(360, 40 * len(top_tags_sla) + 90),
                 )
                 st.plotly_chart(grafico(fig, "Cumprimento de SLA por causa raiz"), width="stretch")
             else:
