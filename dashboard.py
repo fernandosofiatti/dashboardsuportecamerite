@@ -949,6 +949,10 @@ with aba_tempo:
                 with cd1:
                     analise = base_dev[base_dev["justificativa"] == "Análise DEV"]
                     if not analise.empty:
+                        st.metric(
+                            "Tempo médio em 'Análise DEV'",
+                            f"{analise['horas_parado'].mean():.1f} h",
+                        )
                         st.plotly_chart(
                             grafico_area_tempo_parado(
                                 analise, "Parados em 'Análise DEV'", COLOR_SEQUENCE[4],
@@ -960,6 +964,10 @@ with aba_tempo:
                 with cd2:
                     correcao = base_dev[base_dev["justificativa"] == "Correção DEV"]
                     if not correcao.empty:
+                        st.metric(
+                            "Tempo médio em 'Correção DEV'",
+                            f"{correcao['horas_parado'].mean():.1f} h",
+                        )
                         st.plotly_chart(
                             grafico_area_tempo_parado(
                                 correcao, "Parados em 'Correção DEV'", COLOR_SEQUENCE[8],
