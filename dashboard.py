@@ -1107,6 +1107,109 @@ with aba_tempo:
                 st.info("Sem tickets fechados com tempo útil e SLA para os filtros atuais.")
 
         st.write("")
+        st.markdown("##### Tempo de atendimento x SLA por justificativa")
+
+        if {"justificativa", "tempo_vida_horas_uteis_min", "sla_tempo_solucao_min", "status_base"}.issubset(dff.columns):
+            base_utj = dff[
+                dff["status_base"].isin(["Resolved", "Closed"])
+                & dff["tempo_vida_horas_uteis_min"].notna()
+            ].copy()
+            base_utj["justificativa_lbl"] = (
+                base_utj["justificativa"].fillna("").replace("", "Sem justificativa")
+            )
+            parado_j = (
+                base_utj["tempo_parado_min"].fillna(0)
+                if "tempo_parado_min" in base_utj.columns else 0
+            )
+            base_utj["tempo_util_min"] = (
+                base_utj["tempo_vida_horas_uteis_min"].fillna(0) + parado_j
+            ).clip(lower=0)
+            base_utj["sla_min"] = base_utj["sla_tempo_solucao_min"]
+
+            top_just = base_utj["justificativa_lbl"].value_counts().head(10).index
+            amostra_j = base_utj[base_utj["justificativa_lbl"].isin(top_just)]
+            if not amostra_j.empty:
+                resumo_j = (
+                    amostra_j.groupby("justificativa_lbl")
+                    .agg(media=("tempo_util_min", "mean"), sla=("sla_min", "mean"))
+                    .reset_index()
+                    .sort_values("media", ascending=False)
+                )
+                ordem_just = resumo_j["justificativa_lbl"].tolist()
+
+                resumo_j["media"] = resumo_j["media"] / 60
+                resumo_j["sla"] = resumo_j["sla"] / 60
+
+                plot_j = resumo_j.melt(
+                    id_vars="justificativa_lbl", value_vars=["media", "sla"],
+                    var_name="metrica", value_name="horas",
+                )
+                plot_j["metrica"] = plot_j["metrica"].map(
+                    {"media": "Tempo médio de atendimento", "sla": "SLA (meta)"}
+                )
+                plot_j["rotulo"] = plot_j["horas"].apply(
+                    lambda v: f"{v:.1f} h" if pd.notna(v) else ""
+                )
+
+                fig = px.bar(
+                    plot_j, x="horas", y="justificativa_lbl", color="metrica", orientation="h",
+                    barmode="group", text="rotulo",
+                    category_orders={
+                        "justificativa_lbl": ordem_just[::-1],
+                        "metrica": ["Tempo médio de atendimento", "SLA (meta)"],
+                    },
+                    color_discrete_map={
+                        "Tempo médio de atendimento": COLOR_SEQUENCE[3],
+                        "SLA (meta)": COLOR_SEQUENCE[9],
+                    },
+                )
+                fig.update_traces(textposition="outside")
+                fig.update_layout(xaxis_title="Horas", yaxis_title="", legend_title="")
+                evento_j = st.plotly_chart(
+                    grafico(fig, "Tempo de atendimento x SLA por justificativa"),
+                    width="stretch",
+                    on_select="rerun",
+                    selection_mode="points",
+                    key="grafico_tempo_util_justificativa",
+                )
+                st.caption(
+                    "Considera os tickets fechados (resolvidos/fechados). Compara, por "
+                    "justificativa, o tempo médio de atendimento (horário comercial, tempo útil + "
+                    "tempo parado) com a meta de SLA de solução. Quando a barra de atendimento passa "
+                    "a do SLA, a justificativa está, em média, estourando o prazo. "
+                    "**Clique numa barra para ver os chamados da justificativa.**"
+                )
+
+                just_clicadas = categorias_selecionadas(evento_j, eixo="y", ordem=ordem_just)
+
+                if just_clicadas:
+                    st.markdown(
+                        "##### Detalhamento — " + ", ".join(str(j) for j in just_clicadas)
+                    )
+                    det_j = amostra_j[amostra_j["justificativa_lbl"].isin(just_clicadas)].copy()
+                    det_j["tempo_atendimento_h"] = (det_j["tempo_util_min"] / 60).round(1)
+                    det_j["sla_horas"] = (det_j["sla_tempo_solucao_min"] / 60).round(1)
+                    colunas_j = [
+                        c for c in [
+                            "id", "protocolo", "assunto", "categoria", "status",
+                            "justificativa", "urgencia", "responsavel", "equipe_responsavel",
+                            "tempo_vida_horas_uteis_min", "tempo_parado_min",
+                            "tempo_atendimento_h", "sla_horas",
+                        ] if c in det_j.columns
+                    ]
+                    det_j = det_j[colunas_j].sort_values("tempo_atendimento_h", ascending=False)
+                    st.caption(f"{len(det_j)} chamado(s). Tempo de atendimento e SLA em horas.")
+                    st.dataframe(det_j, width="stretch", height=350, hide_index=True)
+                    csv_j = det_j.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button(
+                        "⬇️ Baixar detalhamento (CSV)", csv_j,
+                        "detalhamento_tempo_util_sla_justificativa.csv", "text/csv",
+                        key="download_detalhe_tempo_util_just",
+                    )
+            else:
+                st.info("Sem tickets fechados com tempo útil e SLA para os filtros atuais.")
+
+        st.write("")
         st.markdown("##### Incidentes aguardando DEV")
         st.caption(
             "Considera chamados com categoria 'Incidente' e status 'Aguardando' **abertos "
