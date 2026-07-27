@@ -608,25 +608,27 @@ with st.sidebar:
 
         st.caption("O teste abaixo consulta a API do Movidesk ao vivo para ver "
                    "o id do solicitante e o que /persons devolve.")
-        if st.button("🔬 Testar 1 ticket (JSON cru)"):
-            # /tickets exige $select (sem ele dá 400). Trazemos os campos de
-            # pessoa para ver qual identificador existe no solicitante.
+        def _mostra(label, valor):
+            st.write(f"**{label}:**")
+            if valor is None:
+                st.write("`None` (não veio)")
+            else:
+                st.json(valor)
+
+        if st.button("🔬 Testar: ticket por id (JSON cru)") and "id" in df.columns and len(df):
+            tid = str(df["id"].iloc[0])
+            st.write(f"Buscando o ticket **{tid}** por id (GET /tickets?id=...) ...")
             try:
-                raw = movidesk.api_get(
-                    "/tickets",
-                    {"$select": "id,clients,createdBy,owner", "$top": 3},
-                )
+                data = movidesk.api_get("/tickets", {"id": tid})
+                t = data[0] if isinstance(data, list) and data else data
             except Exception as e:
-                raw = None
-                st.error(f"Erro ao buscar tickets: {e}")
-            if raw:
-                t = raw[0]
-                st.write("**clients (lista de solicitantes):**")
-                st.json(t.get("clients"))
-                st.write("**createdBy (quem abriu):**")
-                st.json(t.get("createdBy"))
-                st.write("**owner (responsável):**")
-                st.json(t.get("owner"))
+                t = None
+                st.error(f"Erro: {e}")
+            if isinstance(t, dict):
+                st.write("**Chaves retornadas:** " + ", ".join(sorted(t.keys())))
+                _mostra("clients (solicitantes)", t.get("clients"))
+                _mostra("createdBy (quem abriu)", t.get("createdBy"))
+                _mostra("owner (responsável)", t.get("owner"))
 
 mask = pd.Series(True, index=df.index)
 
