@@ -456,12 +456,19 @@ def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
     # Enriquece com o Perfil de acesso (accessProfile), buscado na API de
     # Pessoas e cruzado pelo id do solicitante - esse dado não vem no ticket.
     if "perfil_acesso_id" in df.columns:
-        ids_solicitantes = df["perfil_acesso_id"].dropna().unique().tolist()
-        print(f"\nBuscando perfis de acesso de {len(ids_solicitantes)} solicitante(s) (/persons)...")
-        perfis = fetch_person_profiles(ids_solicitantes)
-        if perfis:
-            df["perfil_acesso"] = df["perfil_acesso_id"].map(perfis)
-            print(f"  -> {df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
+        ids_solicitantes = [str(i) for i in df["perfil_acesso_id"].dropna().unique().tolist()]
+        # Usa o cache: só busca no /persons quem ainda não conhecemos. Assim as
+        # próximas atualizações (mesmos clientes) ficam rápidas.
+        cache = db.read_person_profiles()
+        faltando = [i for i in ids_solicitantes if i not in cache]
+        print(f"\nPerfis de acesso: {len(ids_solicitantes)} solicitante(s) nesta rodada, "
+              f"{len(ids_solicitantes) - len(faltando)} já em cache, {len(faltando)} a buscar (/persons)...")
+        if faltando:
+            novos = fetch_person_profiles(faltando)
+            db.upsert_person_profiles(novos)
+            cache.update(novos)
+        df["perfil_acesso"] = df["perfil_acesso_id"].map(lambda i: cache.get(str(i)))
+        print(f"  -> {df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
         df = df.drop(columns=["perfil_acesso_id"])
 
     print("\nEnviando para o Supabase...")

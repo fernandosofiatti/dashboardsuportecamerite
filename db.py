@@ -198,6 +198,53 @@ def _adicionar_colunas_faltantes(engine):
                 )
 
 
+# --------------------------------------------------------------------------
+# CACHE DE PERFIS DE ACESSO DAS PESSOAS
+# --------------------------------------------------------------------------
+# O "Perfil de acesso" (accessProfile) não vem no ticket - é buscado pessoa a
+# pessoa na API /persons (6,5s cada, por causa do limite do Movidesk). Para não
+# reconsultar sempre os mesmos solicitantes a cada atualização, guardamos o que
+# já foi consultado nesta tabela. Assim, as próximas cargas só buscam quem é
+# novo, e ficam rápidas.
+PERSON_TABLE = "movidesk_person_profiles"
+
+
+def ensure_person_table():
+    with get_engine().begin() as conn:
+        conn.execute(text(
+            f"CREATE TABLE IF NOT EXISTS {PERSON_TABLE} "
+            f"(id text PRIMARY KEY, perfil_acesso text)"
+        ))
+
+
+def read_person_profiles() -> dict:
+    """Devolve o mapa {id -> perfil_acesso} já conhecido (cache)."""
+    try:
+        ensure_person_table()
+        with get_engine().connect() as conn:
+            rows = conn.execute(text(f"SELECT id, perfil_acesso FROM {PERSON_TABLE}"))
+            return {str(r[0]): r[1] for r in rows}
+    except Exception as e:  # noqa: BLE001
+        print(f"  [!] Não foi possível ler o cache de perfis: {e}")
+        return {}
+
+
+def upsert_person_profiles(mapping: dict):
+    """Grava/atualiza no cache os perfis recém-consultados."""
+    if not mapping:
+        return
+    ensure_person_table()
+    with get_engine().begin() as conn:
+        for pid, perfil in mapping.items():
+            conn.execute(
+                text(
+                    f"INSERT INTO {PERSON_TABLE} (id, perfil_acesso) VALUES (:id, :perfil) "
+                    f"ON CONFLICT (id) DO UPDATE SET perfil_acesso = EXCLUDED.perfil_acesso"
+                ),
+                {"id": str(pid), "perfil": perfil},
+            )
+
+
 # Nome da coluna -> tipo SQL "base" (sem o "PRIMARY KEY"), para saber quando
 # um valor precisa ser convertido para inteiro antes de gravar.
 _TIPO_POR_COLUNA = {
