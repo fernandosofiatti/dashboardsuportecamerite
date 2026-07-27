@@ -243,18 +243,52 @@ def _cliente_do_ticket(t: dict) -> str:
     return _person_name(primeiro_cliente) if primeiro_cliente else None
 
 
-def _perfil_acesso(t: dict) -> str:
-    """Perfil de acesso (accessProfile) do solicitante do ticket - é um
-    atributo da pessoa no Movidesk (ex.: 'Canais', 'Administradores'). Vem
-    dentro de clients[0]; se não houver, tenta em quem abriu o ticket."""
+def _requester_id(t: dict) -> str:
+    """Id (Cod. ref.) do solicitante do ticket - usado para cruzar com a API
+    de Pessoas e descobrir o Perfil de acesso. O accessProfile NÃO vem dentro
+    do ticket (clients[n] só traz id/nome/e-mail/personType/profileType), só na
+    API /persons - por isso guardamos o id aqui e resolvemos o perfil depois."""
     clients = t.get("clients")
     primeiro_cliente = clients[0] if isinstance(clients, list) and clients else None
-    if isinstance(primeiro_cliente, dict) and primeiro_cliente.get("accessProfile"):
-        return primeiro_cliente.get("accessProfile")
+    if isinstance(primeiro_cliente, dict) and primeiro_cliente.get("id") is not None:
+        return str(primeiro_cliente.get("id"))
     criado_por = t.get("createdBy")
-    if isinstance(criado_por, dict):
-        return criado_por.get("accessProfile")
+    if isinstance(criado_por, dict) and criado_por.get("id") is not None:
+        return str(criado_por.get("id"))
     return None
+
+
+def fetch_person_profiles() -> dict:
+    """Monta um mapa {id (cod. ref.) -> accessProfile} de todas as pessoas,
+    consultando a API de Pessoas (/persons). O "Perfil de acesso" (ex.:
+    'Canais', 'Administradores') é um atributo da pessoa e não vem no ticket.
+
+    Best-effort: se a consulta falhar por qualquer motivo, retorna {} e a
+    extração continua normalmente, apenas sem preencher o perfil de acesso."""
+    perfis = {}
+    skip = 0
+    try:
+        while True:
+            params = {
+                "$select": "id,accessProfile",
+                "$top": PAGE_SIZE,
+                "$skip": skip,
+                "$orderby": "id",
+            }
+            page = api_get("/persons", params)
+            if not page:
+                break
+            for p in page:
+                pid = p.get("id")
+                if pid is not None:
+                    perfis[str(pid)] = p.get("accessProfile")
+            skip += PAGE_SIZE
+            if len(page) < PAGE_SIZE:
+                break
+            _sleep_rate_limit()
+    except Exception as e:  # noqa: BLE001 (best-effort, não pode derrubar a carga)
+        print(f"  [!] Não foi possível buscar os perfis de acesso das pessoas: {e}")
+    return perfis
 
 
 def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
@@ -278,7 +312,8 @@ def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
             "equipe_responsavel": t.get("ownerTeam"),
             "criado_por": _person_name(t.get("createdBy")),
             "cliente": _cliente_do_ticket(t),
-            "perfil_acesso": _perfil_acesso(t),
+            "perfil_acesso": None,  # preenchido depois via API de Pessoas
+            "perfil_acesso_id": _requester_id(t),  # temporário (dropado antes de gravar)
             "data_abertura": t.get("createdDate"),
             "data_resolucao": t.get("resolvedIn"),
             "data_fechamento": t.get("closedIn"),
@@ -406,6 +441,16 @@ def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
 
     df = _dedupe(flatten_tickets(all_raw))
     print(f"\nTotal de tickets únicos nesta rodada: {len(df)}")
+
+    # Enriquece com o Perfil de acesso (accessProfile), buscado na API de
+    # Pessoas e cruzado pelo id do solicitante - esse dado não vem no ticket.
+    if "perfil_acesso_id" in df.columns:
+        print("\nBuscando perfis de acesso das pessoas (/persons)...")
+        perfis = fetch_person_profiles()
+        if perfis:
+            df["perfil_acesso"] = df["perfil_acesso_id"].map(perfis)
+            print(f"  -> {df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
+        df = df.drop(columns=["perfil_acesso_id"])
 
     print("\nEnviando para o Supabase...")
     enviados = db.upsert_tickets(df)
