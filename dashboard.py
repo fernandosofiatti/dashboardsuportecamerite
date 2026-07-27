@@ -136,15 +136,21 @@ st.markdown(
     [data-testid="stSidebar"] button[data-testid*="pills" i] * {
         color: #29184E !important;
     }
-    /* Pílula selecionada (fundo roxo do tema) -> texto branco */
-    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"],
-    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"] *,
-    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"],
-    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"] *,
-    [data-testid="stSidebar"] button[data-testid*="pillsActive" i],
-    [data-testid="stSidebar"] button[data-testid*="pillsActive" i] * {
+    /* Pílula selecionada (fundo roxo do tema) -> texto branco. Cobrimos os
+       vários indicadores de "selecionado" (aria-pressed/checked/selected e o
+       testid ...pillsActive), com a classe do sidebar repetida para ganhar
+       especificidade da regra genérica acima. */
+    [data-testid="stSidebar"][data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-pressed="true"],
+    [data-testid="stSidebar"][data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-pressed="true"] *,
+    [data-testid="stSidebar"][data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"],
+    [data-testid="stSidebar"][data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"] *,
+    [data-testid="stSidebar"][data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"],
+    [data-testid="stSidebar"][data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"] *,
+    [data-testid="stSidebar"][data-testid="stSidebar"] button[data-testid*="pillsActive" i],
+    [data-testid="stSidebar"][data-testid="stSidebar"] button[data-testid*="pillsActive" i] * {
         color: #ffffff !important;
     }
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-pressed="true"],
     [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"],
     [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"],
     [data-testid="stSidebar"] button[data-testid*="pillsActive" i] {
