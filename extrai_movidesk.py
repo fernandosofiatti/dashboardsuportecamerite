@@ -102,9 +102,7 @@ SELECT_FIELDS = [
     "justification",
     "origin",
     "createdDate",
-    "owner",
     "ownerTeam",
-    "createdBy",
     "serviceFirstLevel",
     "serviceSecondLevel",
     "serviceThirdLevel",
@@ -122,8 +120,12 @@ SELECT_FIELDS = [
     "slaSolutionTime",
     "slaResponseTime",
     "slaSolutionDate",
-    "clients",
 ]
+
+# Campos complexos (pessoa) que só vêm na listagem via $expand - se ficarem no
+# $select eles voltam nulos (foi por isso que clients/createdBy/owner e o
+# perfil de acesso vinham vazios). Ver diagnóstico em /tickets?id= vs listagem.
+EXPAND_FIELDS = ["clients", "createdBy", "owner"]
 
 
 # --------------------------------------------------------------------------
@@ -175,6 +177,7 @@ def fetch_all_tickets(endpoint: str, filter_expr: str = None) -> list:
     while True:
         params = {
             "$select": ",".join(SELECT_FIELDS),
+            "$expand": ",".join(EXPAND_FIELDS),
             "$top": PAGE_SIZE,
             "$skip": skip,
             "$orderby": "id",

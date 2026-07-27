@@ -863,6 +863,29 @@ with aba_geral:
         fig.update_yaxes(showgrid=True, gridcolor="#EEF2F6", zeroline=False)
         st.plotly_chart(grafico(fig, "Evolução semanal: abertos x finalizados"), width="stretch")
 
+    # Status x Perfil de acesso: quantos tickets de cada status vêm de cada
+    # perfil de acesso do solicitante (barras empilhadas).
+    if {"status", "perfil_acesso"}.issubset(dff.columns) and dff["perfil_acesso"].notna().any():
+        base_sp = dff.copy()
+        base_sp["perfil_lbl"] = base_sp["perfil_acesso"].fillna("").replace("", "Sem perfil")
+        contagem = base_sp.groupby(["status", "perfil_lbl"]).size().reset_index(name="qtd")
+        ordem_status = (
+            contagem.groupby("status")["qtd"].sum().sort_values(ascending=False).index.tolist()
+        )
+        ordem_perfil = (
+            contagem.groupby("perfil_lbl")["qtd"].sum().sort_values(ascending=False).index.tolist()
+        )
+        fig = px.bar(
+            contagem, x="status", y="qtd", color="perfil_lbl", text="qtd",
+            category_orders={"status": ordem_status, "perfil_lbl": ordem_perfil},
+            color_discrete_sequence=COLOR_SEQUENCE,
+        )
+        fig.update_layout(
+            barmode="stack", xaxis_title="", yaxis_title="Tickets",
+            legend_title="Perfil de acesso",
+        )
+        st.plotly_chart(grafico(fig, "Tickets por status x perfil de acesso"), width="stretch")
+
 # --- Equipe ------------------------------------------------------------------
 with aba_equipe:
     c1, c2 = st.columns(2)
