@@ -604,9 +604,38 @@ with st.sidebar:
             if distintos:
                 st.write("Valores encontrados: " + ", ".join(map(str, distintos[:15])))
             else:
-                st.write("Nenhum ticket com perfil preenchido ainda — por isso o "
-                         "filtro não aparece. Rode uma atualização; se continuar "
-                         "zerado, o id do solicitante não bate com `/persons?id=`.")
+                st.write("Nenhum ticket com perfil preenchido ainda.")
+
+        st.caption("O teste abaixo consulta a API do Movidesk ao vivo para ver "
+                   "o id do solicitante e o que /persons devolve.")
+        if st.button("🔬 Testar 1 ticket + pessoa"):
+            try:
+                raw = movidesk.api_get("/tickets", {"$select": "id,clients,createdBy", "$top": 5})
+            except Exception as e:
+                raw = None
+                st.error(f"Erro ao buscar tickets: {e}")
+            if raw:
+                for t in raw[:5]:
+                    clients = t.get("clients")
+                    n_clients = len(clients) if isinstance(clients, list) else 0
+                    rid = movidesk._requester_id(t)
+                    st.write(f"Ticket **{t.get('id')}** — clients: {n_clients} | id solicitante: `{rid}`")
+                # Testa o /persons com o id do primeiro solicitante encontrado
+                rid = next((movidesk._requester_id(t) for t in raw if movidesk._requester_id(t)), None)
+                if rid:
+                    st.write(f"Consultando `/persons?id={rid}` ...")
+                    try:
+                        pessoa = movidesk.api_get("/persons", {"id": rid})
+                        if isinstance(pessoa, dict):
+                            st.write("accessProfile:", pessoa.get("accessProfile"))
+                            st.json({k: pessoa.get(k) for k in ["id", "businessName", "personType", "profileType", "accessProfile"]})
+                        else:
+                            st.write("Retorno inesperado:", pessoa)
+                    except Exception as e:
+                        st.error(f"Erro em /persons?id={rid}: {e}")
+                else:
+                    st.warning("Nenhum id de solicitante encontrado nos tickets de amostra "
+                               "(campo clients/createdBy vazio).")
 
 mask = pd.Series(True, index=df.index)
 
