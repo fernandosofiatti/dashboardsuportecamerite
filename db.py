@@ -229,6 +229,14 @@ def read_person_profiles() -> dict:
         return {}
 
 
+def clear_person_profiles():
+    """Esvazia o cache de perfis - use quando mudar perfis no Movidesk, para
+    forçar a reconsulta na próxima atualização."""
+    ensure_person_table()
+    with get_engine().begin() as conn:
+        conn.execute(text(f"DELETE FROM {PERSON_TABLE}"))
+
+
 def upsert_person_profiles(mapping: dict):
     """Grava/atualiza no cache os perfis recém-consultados."""
     if not mapping:

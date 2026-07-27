@@ -641,6 +641,13 @@ with st.sidebar:
             else:
                 st.json(valor)
 
+        if st.button("🧹 Limpar cache de perfis (após mudar perfis no Movidesk)"):
+            try:
+                db.clear_person_profiles()
+                st.success("Cache de perfis limpo. Rode 'Atualizar dados' para reconsultar.")
+            except Exception as e:
+                st.error(f"Erro ao limpar cache: {e}")
+
         st.caption("Pessoa x Organização: informe o número de um chamado da Sults "
                    "para ver o perfil da PESSOA que abriu e o perfil da ORGANIZAÇÃO.")
         tid_teste = st.text_input("Nº do chamado (id)", key="tid_perfil_teste")

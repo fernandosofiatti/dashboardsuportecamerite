@@ -247,14 +247,22 @@ def _cliente_do_ticket(t: dict) -> str:
 
 
 def _requester_id(t: dict) -> str:
-    """Id (Cod. ref.) do solicitante do ticket - usado para cruzar com a API
-    de Pessoas e descobrir o Perfil de acesso. O accessProfile NÃO vem dentro
-    do ticket (clients[n] só traz id/nome/e-mail/personType/profileType), só na
-    API /persons - por isso guardamos o id aqui e resolvemos o perfil depois."""
+    """Id (Cod. ref.) usado para descobrir o Perfil de acesso do cliente.
+
+    Usa a ORGANIZAÇÃO do solicitante (clients[0].organization) quando existir,
+    porque a classificação do cliente (Franquia, Canais, Clientes...) fica no
+    perfil da empresa - não no da pessoa que abriu o chamado (um funcionário
+    de uma franquia pode ter perfil 'Canais' enquanto a empresa é 'Franquia').
+    Se não houver organização vinculada, cai para a própria pessoa e, por fim,
+    para quem abriu o ticket. O accessProfile em si vem depois, via /persons."""
     clients = t.get("clients")
     primeiro_cliente = clients[0] if isinstance(clients, list) and clients else None
-    if isinstance(primeiro_cliente, dict) and primeiro_cliente.get("id") is not None:
-        return str(primeiro_cliente.get("id"))
+    if isinstance(primeiro_cliente, dict):
+        org = primeiro_cliente.get("organization")
+        if isinstance(org, dict) and org.get("id") is not None:
+            return str(org.get("id"))
+        if primeiro_cliente.get("id") is not None:
+            return str(primeiro_cliente.get("id"))
     criado_por = t.get("createdBy")
     if isinstance(criado_por, dict) and criado_por.get("id") is not None:
         return str(criado_por.get("id"))
