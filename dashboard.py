@@ -130,6 +130,21 @@ st.markdown(
     [data-testid="stSidebarCollapsedControl"] svg,
     [data-testid="stSidebarCollapsedControl"] button svg { fill: #29184E !important; color: #29184E !important; }
 
+    /* A barra lateral tinha sido recolhida sem querer e não voltava. Aqui
+       forçamos ela a ficar SEMPRE visível/aberta, cobrindo os vários jeitos
+       que o Streamlit usa para escondê-la (transform, margem e largura). */
+    section[data-testid="stSidebar"] {
+        transform: none !important;
+        visibility: visible !important;
+        margin-left: 0 !important;
+        min-width: 260px !important;
+        width: 260px !important;
+    }
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        transform: none !important;
+        margin-left: 0 !important;
+    }
+
     /* Pílulas de filtro (st.pills): o reset global do sidebar
        (* { color: claro }) deixava o texto branco em cima do fundo claro das
        pílulas apagadas - ilegível. Miramos o container do grupo de botões
