@@ -258,34 +258,41 @@ def _requester_id(t: dict) -> str:
     return None
 
 
-def fetch_person_profiles() -> dict:
-    """Monta um mapa {id (cod. ref.) -> accessProfile} de todas as pessoas,
-    consultando a API de Pessoas (/persons). O "Perfil de acesso" (ex.:
+def _escape_odata(valor: str) -> str:
+    """Escapa aspas simples para uso dentro de um literal string do OData."""
+    return str(valor).replace("'", "''")
+
+
+def fetch_person_profiles(person_ids) -> dict:
+    """Monta um mapa {id (cod. ref.) -> accessProfile} SÓ das pessoas
+    informadas (os solicitantes dos tickets desta rodada), consultando a API
+    de Pessoas (/persons) em lotes com $filter. O "Perfil de acesso" (ex.:
     'Canais', 'Administradores') é um atributo da pessoa e não vem no ticket.
 
-    Best-effort: se a consulta falhar por qualquer motivo, retorna {} e a
-    extração continua normalmente, apenas sem preencher o perfil de acesso."""
+    Buscar só os ids necessários (em vez de varrer todas as pessoas) mantém a
+    atualização rápida - antes isso varria a base inteira de pessoas a cada
+    rodada e travava.
+
+    Best-effort: se a consulta falhar, retorna o que conseguiu e a extração
+    continua normalmente, apenas sem preencher o perfil de acesso."""
+    ids = [str(i) for i in dict.fromkeys(person_ids) if i is not None and str(i) != ""]
     perfis = {}
-    skip = 0
+    if not ids:
+        return perfis
+
+    LOTE = 25  # ids por requisição (mantém a URL curta e poucos requests)
     try:
-        while True:
-            params = {
-                "$select": "id,accessProfile",
-                "$top": PAGE_SIZE,
-                "$skip": skip,
-                "$orderby": "id",
-            }
+        for inicio in range(0, len(ids), LOTE):
+            lote = ids[inicio:inicio + LOTE]
+            filtro = " or ".join(f"id eq '{_escape_odata(pid)}'" for pid in lote)
+            params = {"$select": "id,accessProfile", "$filter": filtro, "$top": LOTE}
             page = api_get("/persons", params)
-            if not page:
-                break
-            for p in page:
+            for p in (page or []):
                 pid = p.get("id")
                 if pid is not None:
                     perfis[str(pid)] = p.get("accessProfile")
-            skip += PAGE_SIZE
-            if len(page) < PAGE_SIZE:
-                break
-            _sleep_rate_limit()
+            if inicio + LOTE < len(ids):
+                _sleep_rate_limit()
     except Exception as e:  # noqa: BLE001 (best-effort, não pode derrubar a carga)
         print(f"  [!] Não foi possível buscar os perfis de acesso das pessoas: {e}")
     return perfis
@@ -445,8 +452,9 @@ def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
     # Enriquece com o Perfil de acesso (accessProfile), buscado na API de
     # Pessoas e cruzado pelo id do solicitante - esse dado não vem no ticket.
     if "perfil_acesso_id" in df.columns:
-        print("\nBuscando perfis de acesso das pessoas (/persons)...")
-        perfis = fetch_person_profiles()
+        ids_solicitantes = df["perfil_acesso_id"].dropna().unique().tolist()
+        print(f"\nBuscando perfis de acesso de {len(ids_solicitantes)} solicitante(s) (/persons)...")
+        perfis = fetch_person_profiles(ids_solicitantes)
         if perfis:
             df["perfil_acesso"] = df["perfil_acesso_id"].map(perfis)
             print(f"  -> {df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
