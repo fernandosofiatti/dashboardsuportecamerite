@@ -608,34 +608,30 @@ with st.sidebar:
 
         st.caption("O teste abaixo consulta a API do Movidesk ao vivo para ver "
                    "o id do solicitante e o que /persons devolve.")
-        if st.button("🔬 Testar 1 ticket + pessoa"):
-            try:
-                raw = movidesk.api_get("/tickets", {"$select": "id,clients,createdBy", "$top": 5})
-            except Exception as e:
-                raw = None
-                st.error(f"Erro ao buscar tickets: {e}")
+        if st.button("🔬 Testar 1 ticket (JSON cru)"):
+            # Busca SEM $select (objeto completo) para ver se clients/createdBy
+            # vêm preenchidos - se vierem só aqui, o problema é o $select.
+            raw = None
+            for tentativa in [
+                {"$expand": "clients,createdBy,owner", "$top": 1},
+                {"$top": 1},
+            ]:
+                try:
+                    raw = movidesk.api_get("/tickets", tentativa)
+                    st.write(f"Parâmetros usados: `{tentativa}`")
+                    break
+                except Exception as e:
+                    st.warning(f"Falhou com {tentativa}: {e}")
             if raw:
-                for t in raw[:5]:
-                    clients = t.get("clients")
-                    n_clients = len(clients) if isinstance(clients, list) else 0
-                    rid = movidesk._requester_id(t)
-                    st.write(f"Ticket **{t.get('id')}** — clients: {n_clients} | id solicitante: `{rid}`")
-                # Testa o /persons com o id do primeiro solicitante encontrado
-                rid = next((movidesk._requester_id(t) for t in raw if movidesk._requester_id(t)), None)
-                if rid:
-                    st.write(f"Consultando `/persons?id={rid}` ...")
-                    try:
-                        pessoa = movidesk.api_get("/persons", {"id": rid})
-                        if isinstance(pessoa, dict):
-                            st.write("accessProfile:", pessoa.get("accessProfile"))
-                            st.json({k: pessoa.get(k) for k in ["id", "businessName", "personType", "profileType", "accessProfile"]})
-                        else:
-                            st.write("Retorno inesperado:", pessoa)
-                    except Exception as e:
-                        st.error(f"Erro em /persons?id={rid}: {e}")
-                else:
-                    st.warning("Nenhum id de solicitante encontrado nos tickets de amostra "
-                               "(campo clients/createdBy vazio).")
+                t = raw[0]
+                st.write("**Chaves retornadas no ticket:**")
+                st.write(", ".join(sorted(t.keys())))
+                st.write("**clients:**")
+                st.json(t.get("clients"))
+                st.write("**createdBy:**")
+                st.json(t.get("createdBy"))
+                st.write("**owner:**")
+                st.json(t.get("owner"))
 
 mask = pd.Series(True, index=df.index)
 
