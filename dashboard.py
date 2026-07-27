@@ -615,20 +615,40 @@ with st.sidebar:
             else:
                 st.json(valor)
 
-        if st.button("🔬 Testar: ticket por id (JSON cru)") and "id" in df.columns and len(df):
-            tid = str(df["id"].iloc[0])
-            st.write(f"Buscando o ticket **{tid}** por id (GET /tickets?id=...) ...")
-            try:
-                data = movidesk.api_get("/tickets", {"id": tid})
-                t = data[0] if isinstance(data, list) and data else data
-            except Exception as e:
-                t = None
-                st.error(f"Erro: {e}")
+        if st.button("🔬 Testar: listagem com $expand + /persons"):
+            # 1) A listagem traz clients via $expand?
+            t = None
+            for tentativa in [
+                {"$select": "id", "$expand": "clients", "$top": 2},
+                {"$select": "id,protocol", "$expand": "clients", "$top": 2},
+            ]:
+                try:
+                    data = movidesk.api_get("/tickets", tentativa)
+                    if data:
+                        t = data[0]
+                        st.write(f"✅ Listagem OK com `{tentativa}`")
+                        break
+                except Exception as e:
+                    st.warning(f"Falhou `{tentativa}`: {e}")
             if isinstance(t, dict):
-                st.write("**Chaves retornadas:** " + ", ".join(sorted(t.keys())))
-                _mostra("clients (solicitantes)", t.get("clients"))
-                _mostra("createdBy (quem abriu)", t.get("createdBy"))
-                _mostra("owner (responsável)", t.get("owner"))
+                _mostra("clients na LISTAGEM", t.get("clients"))
+                clients = t.get("clients")
+                rid = None
+                if isinstance(clients, list) and clients:
+                    rid = clients[0].get("id")
+                # 2) /persons?id= devolve accessProfile?
+                if rid:
+                    st.write(f"Consultando `/persons?id={rid}` ...")
+                    try:
+                        pessoa = movidesk.api_get("/persons", {"id": rid})
+                        p = pessoa[0] if isinstance(pessoa, list) and pessoa else pessoa
+                        if isinstance(p, dict):
+                            st.write("**accessProfile:**", p.get("accessProfile"))
+                            _mostra("pessoa", {k: p.get(k) for k in ["id", "businessName", "personType", "profileType", "accessProfile"]})
+                    except Exception as e:
+                        st.error(f"Erro em /persons?id={rid}: {e}")
+                else:
+                    st.warning("Listagem ainda não trouxe clients[0].id.")
 
 mask = pd.Series(True, index=df.index)
 
