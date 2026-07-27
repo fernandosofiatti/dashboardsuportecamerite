@@ -95,6 +95,7 @@ st.set_page_config(
     page_title="Dashboard de Suporte - Movidesk",
     page_icon="📊",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown(
@@ -122,6 +123,12 @@ st.markdown(
         background-color: #FFFFFF !important;
     }
     [data-testid="stSidebar"] svg { fill: #29184E; }
+
+    /* Botão que reabre a barra lateral quando ela está recolhida - garante
+       que fique visível (ícone escuro sobre o fundo claro da página). */
+    [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
+    [data-testid="stSidebarCollapsedControl"] svg,
+    [data-testid="stSidebarCollapsedControl"] button svg { fill: #29184E !important; color: #29184E !important; }
 
     /* Pílulas de filtro (st.pills): o reset global do sidebar
        (* { color: claro }) deixava o texto branco em cima do fundo claro das
