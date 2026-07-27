@@ -854,22 +854,34 @@ with aba_geral:
         base_sp = dff.copy()
         base_sp["perfil_lbl"] = base_sp["perfil_acesso"].fillna("").replace("", "Sem perfil")
         contagem = base_sp.groupby(["status", "perfil_lbl"]).size().reset_index(name="qtd")
+        # % de cada perfil dentro do status (soma 100% por status).
+        total_status = contagem.groupby("status")["qtd"].transform("sum")
+        contagem["pct"] = contagem["qtd"] / total_status * 100
+        contagem["rotulo"] = contagem["pct"].round(0).astype(int).astype(str) + "%"
         ordem_status = (
             contagem.groupby("status")["qtd"].sum().sort_values(ascending=False).index.tolist()
         )
         ordem_perfil = (
             contagem.groupby("perfil_lbl")["qtd"].sum().sort_values(ascending=False).index.tolist()
         )
+        # Barra horizontal 100% empilhada: cada status vira uma barra e os
+        # perfis de acesso se distribuem em % dentro dela (estilo Likert).
         fig = px.bar(
-            contagem, x="status", y="qtd", color="perfil_lbl", text="qtd",
-            category_orders={"status": ordem_status, "perfil_lbl": ordem_perfil},
+            contagem, x="pct", y="status", color="perfil_lbl", orientation="h", text="rotulo",
+            category_orders={"status": ordem_status[::-1], "perfil_lbl": ordem_perfil},
             color_discrete_sequence=COLOR_SEQUENCE,
+            custom_data=["perfil_lbl", "qtd"],
+        )
+        fig.update_traces(
+            textposition="inside", insidetextanchor="middle",
+            hovertemplate="%{customdata[0]}: %{customdata[1]} tickets (%{x:.0f}%)<extra></extra>",
         )
         fig.update_layout(
-            barmode="stack", xaxis_title="", yaxis_title="Tickets",
+            barmode="stack", xaxis_title="% dos tickets", yaxis_title="",
             legend_title="Perfil de acesso",
+            xaxis=dict(range=[0, 100], ticksuffix="%"),
         )
-        st.plotly_chart(grafico(fig, "Tickets por status x perfil de acesso"), width="stretch")
+        st.plotly_chart(grafico(fig, "Perfil de acesso por status (% dos tickets)"), width="stretch")
 
 # --- Equipe ------------------------------------------------------------------
 with aba_equipe:
