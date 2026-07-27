@@ -568,12 +568,9 @@ with st.sidebar:
         date_range = None
 
     def multiselect_coluna(label, coluna):
-        """Retorna (selecionados, opções completas). Tickets com valor em
-        branco nessa coluna não aparecem na lista de opções (não dá pra
-        selecionar "vazio" num filtro) - por isso o filtro só é aplicado de
-        fato quando o usuário tira alguma opção da seleção padrão; enquanto
-        estiver tudo selecionado, os tickets em branco continuam aparecendo
-        normalmente.
+        """Retorna (selecionados, opções completas). As pílulas começam TODAS
+        apagadas: enquanto nada estiver selecionado, mostramos tudo; ao clicar
+        numa (ou mais) opção, filtramos para trazer só o que foi clicado.
 
         Usa st.pills (botões que acendem/apagam) em vez de st.multiselect:
         o multiselect padrão do Streamlit tinha um bug visual de renderização
@@ -582,7 +579,7 @@ with st.sidebar:
         opcoes = sorted(df[coluna].dropna().unique().tolist()) if coluna in df.columns else []
         if not opcoes:
             return [], []
-        selecionados = st.pills(label, opcoes, selection_mode="multi", default=opcoes)
+        selecionados = st.pills(label, opcoes, selection_mode="multi", default=None)
         return (selecionados or []), opcoes
 
     status_sel, status_opcoes = multiselect_coluna("Status", "status")
@@ -648,10 +645,9 @@ for coluna, selecionados, opcoes in [
     ("equipe_responsavel", equipe_sel, equipe_opcoes),
     ("perfil_acesso", perfil_sel, perfil_opcoes),
 ]:
-    # Só filtra de verdade se o usuário tirou alguma opção do padrão
-    # (todas selecionadas). Assim, tickets com essa coluna em branco não
-    # somem "de graça" - só se o usuário realmente restringir a seleção.
-    if coluna in df.columns and set(selecionados) != set(opcoes):
+    # Nada selecionado = mostra tudo. Se o usuário clicou em uma ou mais
+    # opções, filtra para trazer só o que foi clicado.
+    if coluna in df.columns and selecionados:
         mask &= df[coluna].isin(selecionados)
 
 dff = df[mask]
