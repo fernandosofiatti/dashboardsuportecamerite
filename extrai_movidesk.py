@@ -263,79 +263,39 @@ def _escape_odata(valor: str) -> str:
     return str(valor).replace("'", "''")
 
 
-def _scan_all_person_profiles() -> dict:
-    """Varre a lista completa de pessoas (/persons) paginando, montando o mapa
-    {id -> accessProfile}. Usado como fallback quando o filtro por id não é
-    suportado. Tem trava anti-loop (limite de páginas e avanço obrigatório do
-    $skip) - foi isso que travou numa versão anterior."""
-    perfis = {}
-    skip = 0
-    paginas = 0
-    MAX_PAGINAS = 1000
-    while paginas < MAX_PAGINAS:
-        page = api_get("/persons", {"$select": "id,accessProfile", "$top": PAGE_SIZE, "$skip": skip})
-        if not isinstance(page, list) or not page:
-            break
-        for p in page:
-            pid = p.get("id")
-            if pid is not None:
-                perfis[str(pid)] = p.get("accessProfile")
-        paginas += 1
-        if len(page) < PAGE_SIZE:
-            break
-        skip += PAGE_SIZE
-        _sleep_rate_limit()
-    return perfis
+def _person_access_profile(pid: str):
+    """Busca UMA pessoa por id na API de Pessoas (GET /persons?id=X) - é o
+    método documentado para obter uma pessoa específica - e devolve o
+    accessProfile (Perfil de acesso). Retorna None se não encontrar."""
+    data = api_get("/persons", {"id": pid})
+    if isinstance(data, dict):
+        return data.get("accessProfile")
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0].get("accessProfile")
+    return None
 
 
 def fetch_person_profiles(person_ids) -> dict:
-    """Monta um mapa {id (cod. ref.) -> accessProfile} das pessoas informadas
-    (os solicitantes dos tickets desta rodada). O "Perfil de acesso" (ex.:
-    'Canais', 'Administradores') é um atributo da pessoa e não vem no ticket.
+    """Monta um mapa {id (cod. ref.) -> accessProfile} dos solicitantes dos
+    tickets desta rodada. O "Perfil de acesso" (ex.: 'Canais', 'Administradores')
+    é um atributo da pessoa e não vem no ticket, então cruzamos o
+    ticket.clients[n].id com a API de Pessoas (GET /persons?id=X).
 
-    Estratégia auto-ajustável:
-      1. Tenta buscar em lotes por $filter=id (rápido: 25 ids por requisição).
-      2. Se o primeiro lote não retornar nada (sinal de que a API não filtra
-         pessoas por id), cai para uma varredura única da lista de pessoas.
-
-    Best-effort: qualquer falha retorna o que já tiver e a extração continua."""
+    Consulta uma pessoa por vez (método documentado) e só os ids únicos, para
+    não repetir a mesma pessoa. Best-effort: qualquer id que falhe é ignorado e
+    a extração continua."""
     ids = [str(i) for i in dict.fromkeys(person_ids) if i is not None and str(i) != ""]
     perfis = {}
     if not ids:
         return perfis
 
-    LOTE = 25
-    filtro_por_id_funciona = True
-    try:
-        for idx, inicio in enumerate(range(0, len(ids), LOTE)):
-            lote = ids[inicio:inicio + LOTE]
-            filtro = " or ".join(f"id eq '{_escape_odata(pid)}'" for pid in lote)
-            page = api_get("/persons", {"$select": "id,accessProfile", "$filter": filtro, "$top": LOTE})
-            achou_no_lote = False
-            for p in (page or []):
-                pid = p.get("id")
-                if pid is not None:
-                    perfis[str(pid)] = p.get("accessProfile")
-                    achou_no_lote = True
-            # Se o primeiro lote não trouxe nada, provavelmente a API não
-            # aceita filtrar pessoas por id -> muda de estratégia.
-            if idx == 0 and not achou_no_lote:
-                filtro_por_id_funciona = False
-                break
-            if inicio + LOTE < len(ids):
-                _sleep_rate_limit()
-    except Exception as e:  # noqa: BLE001
-        print(f"  [!] Filtro por id falhou ({e}); vou varrer a lista de pessoas.")
-        filtro_por_id_funciona = False
-
-    if not filtro_por_id_funciona:
-        print("  [i] Filtro por id não retornou; varrendo a lista completa de pessoas...")
+    for pos, pid in enumerate(ids):
         try:
-            todos = _scan_all_person_profiles()
-            perfis = {pid: todos.get(pid) for pid in ids if pid in todos}
-        except Exception as e:  # noqa: BLE001
-            print(f"  [!] Não foi possível varrer as pessoas: {e}")
-
+            perfis[pid] = _person_access_profile(pid)
+        except Exception as e:  # noqa: BLE001 (best-effort por pessoa)
+            print(f"  [!] Falha ao buscar perfil da pessoa {pid}: {e}")
+        if pos < len(ids) - 1:
+            _sleep_rate_limit()
     return perfis
 
 
