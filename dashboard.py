@@ -609,28 +609,23 @@ with st.sidebar:
         st.caption("O teste abaixo consulta a API do Movidesk ao vivo para ver "
                    "o id do solicitante e o que /persons devolve.")
         if st.button("🔬 Testar 1 ticket (JSON cru)"):
-            # Busca SEM $select (objeto completo) para ver se clients/createdBy
-            # vêm preenchidos - se vierem só aqui, o problema é o $select.
-            raw = None
-            for tentativa in [
-                {"$expand": "clients,createdBy,owner", "$top": 1},
-                {"$top": 1},
-            ]:
-                try:
-                    raw = movidesk.api_get("/tickets", tentativa)
-                    st.write(f"Parâmetros usados: `{tentativa}`")
-                    break
-                except Exception as e:
-                    st.warning(f"Falhou com {tentativa}: {e}")
+            # /tickets exige $select (sem ele dá 400). Trazemos os campos de
+            # pessoa para ver qual identificador existe no solicitante.
+            try:
+                raw = movidesk.api_get(
+                    "/tickets",
+                    {"$select": "id,clients,createdBy,owner", "$top": 3},
+                )
+            except Exception as e:
+                raw = None
+                st.error(f"Erro ao buscar tickets: {e}")
             if raw:
                 t = raw[0]
-                st.write("**Chaves retornadas no ticket:**")
-                st.write(", ".join(sorted(t.keys())))
-                st.write("**clients:**")
+                st.write("**clients (lista de solicitantes):**")
                 st.json(t.get("clients"))
-                st.write("**createdBy:**")
+                st.write("**createdBy (quem abriu):**")
                 st.json(t.get("createdBy"))
-                st.write("**owner:**")
+                st.write("**owner (responsável):**")
                 st.json(t.get("owner"))
 
 mask = pd.Series(True, index=df.index)
