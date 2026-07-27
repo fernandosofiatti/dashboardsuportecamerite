@@ -641,25 +641,39 @@ with st.sidebar:
             else:
                 st.json(valor)
 
-        if st.button("🔬 Testar parâmetros REAIS da extração"):
-            # Testa combinações de $expand para ver quais o Movidesk aceita
-            # junto com o $select completo da extração.
-            sel = ",".join(movidesk.SELECT_FIELDS)
-            combos = [
-                {"$select": sel, "$expand": ",".join(movidesk.EXPAND_FIELDS), "$top": 2, "$orderby": "id"},
-                {"$select": sel, "$expand": "clients", "$top": 2, "$orderby": "id"},
-                {"$select": "id", "$expand": "clients,createdBy,owner", "$top": 2, "$orderby": "id"},
-            ]
-            for tentativa in combos:
-                st.markdown(f"**Testando:** `$expand={tentativa.get('$expand')}` + $select completo={'sim' if tentativa['$select']==sel else 'não'}")
+        st.caption("Pessoa x Organização: informe o número de um chamado da Sults "
+                   "para ver o perfil da PESSOA que abriu e o perfil da ORGANIZAÇÃO.")
+        tid_teste = st.text_input("Nº do chamado (id)", key="tid_perfil_teste")
+        if st.button("🔬 Comparar perfil pessoa x organização") and tid_teste:
+            def _perfil(pid):
                 try:
-                    data = movidesk.api_get("/tickets", tentativa)
-                    t = data[0] if data else {}
-                    cl = t.get("clients")
-                    ok_cl = isinstance(cl, list) and cl and cl[0].get("id")
-                    st.write(f"→ OK. clients: {'preenchido ('+str(cl[0].get('id'))+')' if ok_cl else 'vazio/None'} | owner: {'ok' if t.get('owner') else 'None'} | createdBy: {'ok' if t.get('createdBy') else 'None'}")
+                    p = movidesk.api_get("/persons", {"id": str(pid)})
+                    p = p[0] if isinstance(p, list) and p else p
+                    return p.get("accessProfile") if isinstance(p, dict) else None
                 except Exception as e:
-                    st.error(f"→ FALHOU: {e}")
+                    return f"erro: {e}"
+            try:
+                data = movidesk.api_get(
+                    "/tickets",
+                    {"id": str(tid_teste).strip(), "$select": "id", "$expand": "clients"},
+                )
+                t = data[0] if isinstance(data, list) and data else data
+            except Exception as e:
+                t = None
+                st.error(f"Erro ao buscar o chamado: {e}")
+            clients = t.get("clients") if isinstance(t, dict) else None
+            if isinstance(clients, list) and clients:
+                cli = clients[0]
+                org = cli.get("organization") if isinstance(cli, dict) else None
+                st.write(f"**Pessoa:** {cli.get('businessName')} (id {cli.get('id')}) "
+                         f"→ perfil: **{_perfil(cli.get('id'))}**")
+                if isinstance(org, dict):
+                    st.write(f"**Organização:** {org.get('businessName')} (id {org.get('id')}) "
+                             f"→ perfil: **{_perfil(org.get('id'))}**")
+                else:
+                    st.write("Sem organização vinculada nesse chamado.")
+            else:
+                st.warning("Chamado sem clients (ou id inválido).")
 
 mask = pd.Series(True, index=df.index)
 
