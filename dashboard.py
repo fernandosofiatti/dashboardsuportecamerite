@@ -864,24 +864,35 @@ with aba_geral:
         ordem_perfil = (
             contagem.groupby("perfil_lbl")["qtd"].sum().sort_values(ascending=False).index.tolist()
         )
-        # Barra horizontal 100% empilhada: cada status vira uma barra e os
-        # perfis de acesso se distribuem em % dentro dela (estilo Likert).
+        # Gráfico DIVERGENTE: metade dos perfis vai para a esquerda (valores
+        # negativos) e metade para a direita (positivos), partindo do centro.
+        metade = (len(ordem_perfil) + 1) // 2
+        lado_esquerda = set(ordem_perfil[:metade])
+        contagem["pct_assinado"] = contagem.apply(
+            lambda r: -r["pct"] if r["perfil_lbl"] in lado_esquerda else r["pct"], axis=1
+        )
+
         fig = px.bar(
-            contagem, x="pct", y="status", color="perfil_lbl", orientation="h", text="rotulo",
+            contagem, x="pct_assinado", y="status", color="perfil_lbl", orientation="h",
+            text="rotulo",
             category_orders={"status": ordem_status[::-1], "perfil_lbl": ordem_perfil},
             color_discrete_sequence=COLOR_SEQUENCE,
-            custom_data=["perfil_lbl", "qtd"],
+            custom_data=["perfil_lbl", "qtd", "pct"],
         )
         fig.update_traces(
             textposition="inside", insidetextanchor="middle",
-            hovertemplate="%{customdata[0]}: %{customdata[1]} tickets (%{x:.0f}%)<extra></extra>",
+            hovertemplate="%{customdata[0]}: %{customdata[1]} tickets (%{customdata[2]:.0f}%)<extra></extra>",
         )
+        lim = float(contagem.groupby(["status", contagem["pct_assinado"] < 0])["pct_assinado"]
+                    .sum().abs().max()) if not contagem.empty else 100
+        lim = max(10.0, lim) * 1.1
         fig.update_layout(
-            barmode="stack", xaxis_title="% dos tickets", yaxis_title="",
+            barmode="relative", xaxis_title="% dos tickets (esquerda ↔ direita)", yaxis_title="",
             legend_title="Perfil de acesso",
-            xaxis=dict(range=[0, 100], ticksuffix="%"),
+            xaxis=dict(range=[-lim, lim], tickformat=".0f", ticksuffix="%"),
         )
-        st.plotly_chart(grafico(fig, "Perfil de acesso por status (% dos tickets)"), width="stretch")
+        fig.add_vline(x=0, line_width=1, line_color="#94A3B8")
+        st.plotly_chart(grafico(fig, "Perfil de acesso por status (divergente)"), width="stretch")
 
 # --- Equipe ------------------------------------------------------------------
 with aba_equipe:
