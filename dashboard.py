@@ -479,7 +479,11 @@ def atualizar_dados(full: bool, days: int = None):
     if df_novo.empty:
         st.info("Nenhum ticket novo ou alterado. A base já estava em dia.")
     else:
-        st.success(f"Dados atualizados! {len(df_novo)} tickets enviados ao Supabase.")
+        msg = f"Dados atualizados! {len(df_novo)} tickets enviados ao Supabase."
+        if "perfil_acesso" in df_novo.columns:
+            com_perfil = int(df_novo["perfil_acesso"].notna().sum())
+            msg += f" Perfil de acesso preenchido em {com_perfil} de {len(df_novo)}."
+        st.success(msg)
 
 
 with st.sidebar:
@@ -586,6 +590,23 @@ with st.sidebar:
     urgencia_sel, urgencia_opcoes = multiselect_coluna("Urgência", "urgencia")
     equipe_sel, equipe_opcoes = multiselect_coluna("Equipe responsável", "equipe_responsavel")
     perfil_sel, perfil_opcoes = multiselect_coluna("Perfil de acesso", "perfil_acesso")
+
+    # Diagnóstico rápido do campo "Perfil de acesso" (some quando a coluna já
+    # estiver populada e o filtro aparecer normalmente).
+    with st.expander("🔧 Diagnóstico: Perfil de acesso"):
+        if "perfil_acesso" not in df.columns:
+            st.write("A coluna `perfil_acesso` ainda não existe na base. "
+                     "Rode uma atualização com o código novo para criá-la.")
+        else:
+            preenchidos = int(df["perfil_acesso"].notna().sum())
+            distintos = df["perfil_acesso"].dropna().unique().tolist()
+            st.write(f"Preenchidos: **{preenchidos}** de {len(df)} tickets.")
+            if distintos:
+                st.write("Valores encontrados: " + ", ".join(map(str, distintos[:15])))
+            else:
+                st.write("Nenhum ticket com perfil preenchido ainda — por isso o "
+                         "filtro não aparece. Rode uma atualização; se continuar "
+                         "zerado, o id do solicitante não bate com `/persons?id=`.")
 
 mask = pd.Series(True, index=df.index)
 
