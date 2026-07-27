@@ -125,25 +125,29 @@ st.markdown(
 
     /* Pílulas de filtro (st.pills): o reset global do sidebar
        (* { color: claro }) deixava o texto branco em cima do fundo claro das
-       pílulas apagadas - ilegível. Aqui forçamos texto ESCURO nas apagadas e
-       texto BRANCO sobre roxo nas acesas. Cobrimos vários nomes de testid
-       porque eles mudam entre versões do Streamlit. */
-    [data-testid="stSidebar"] button[data-testid*="pills" i],
-    [data-testid="stSidebar"] button[data-testid*="pills" i] p,
-    [data-testid="stSidebar"] button[data-testid*="pills" i] span,
+       pílulas apagadas - ilegível. Miramos o container do grupo de botões
+       (stButtonGroup) e vários nomes alternativos para cobrir versões
+       diferentes do Streamlit. Texto ESCURO por padrão, BRANCO na selecionada. */
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button,
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button *,
     [data-testid="stSidebar"] [data-testid="stPills"] button,
-    [data-testid="stSidebar"] [data-testid="stPills"] button p {
+    [data-testid="stSidebar"] [data-testid="stPills"] button *,
+    [data-testid="stSidebar"] button[data-testid*="pills" i],
+    [data-testid="stSidebar"] button[data-testid*="pills" i] * {
         color: #29184E !important;
     }
+    /* Pílula selecionada (fundo roxo do tema) -> texto branco */
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"],
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"] *,
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"],
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"] *,
     [data-testid="stSidebar"] button[data-testid*="pillsActive" i],
-    [data-testid="stSidebar"] button[data-testid*="pillsActive" i] p,
-    [data-testid="stSidebar"] button[data-testid*="pillsActive" i] span,
-    [data-testid="stSidebar"] [data-testid="stPills"] button[aria-checked="true"],
-    [data-testid="stSidebar"] [data-testid="stPills"] button[aria-checked="true"] p {
+    [data-testid="stSidebar"] button[data-testid*="pillsActive" i] * {
         color: #ffffff !important;
     }
-    [data-testid="stSidebar"] button[data-testid*="pillsActive" i],
-    [data-testid="stSidebar"] [data-testid="stPills"] button[aria-checked="true"] {
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-checked="true"],
+    [data-testid="stSidebar"] [data-testid="stButtonGroup"] button[aria-selected="true"],
+    [data-testid="stSidebar"] button[data-testid*="pillsActive" i] {
         background-color: #7B48EA !important;
         border-color: #7B48EA !important;
     }
