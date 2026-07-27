@@ -585,6 +585,7 @@ with st.sidebar:
     categoria_sel, categoria_opcoes = multiselect_coluna("Categoria", "categoria")
     urgencia_sel, urgencia_opcoes = multiselect_coluna("Urgência", "urgencia")
     equipe_sel, equipe_opcoes = multiselect_coluna("Equipe responsável", "equipe_responsavel")
+    perfil_sel, perfil_opcoes = multiselect_coluna("Perfil de acesso", "perfil_acesso")
 
 mask = pd.Series(True, index=df.index)
 
@@ -597,6 +598,7 @@ for coluna, selecionados, opcoes in [
     ("categoria", categoria_sel, categoria_opcoes),
     ("urgencia", urgencia_sel, urgencia_opcoes),
     ("equipe_responsavel", equipe_sel, equipe_opcoes),
+    ("perfil_acesso", perfil_sel, perfil_opcoes),
 ]:
     # Só filtra de verdade se o usuário tirou alguma opção do padrão
     # (todas selecionadas). Assim, tickets com essa coluna em branco não

@@ -76,6 +76,7 @@ COLUMNS = [
     ("equipe_responsavel", "text"),
     ("criado_por", "text"),
     ("cliente", "text"),
+    ("perfil_acesso", "text"),
     ("data_abertura", "timestamp"),
     ("data_resolucao", "timestamp"),
     ("data_fechamento", "timestamp"),

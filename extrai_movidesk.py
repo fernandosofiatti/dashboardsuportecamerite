@@ -243,6 +243,20 @@ def _cliente_do_ticket(t: dict) -> str:
     return _person_name(primeiro_cliente) if primeiro_cliente else None
 
 
+def _perfil_acesso(t: dict) -> str:
+    """Perfil de acesso (accessProfile) do solicitante do ticket - é um
+    atributo da pessoa no Movidesk (ex.: 'Canais', 'Administradores'). Vem
+    dentro de clients[0]; se não houver, tenta em quem abriu o ticket."""
+    clients = t.get("clients")
+    primeiro_cliente = clients[0] if isinstance(clients, list) and clients else None
+    if isinstance(primeiro_cliente, dict) and primeiro_cliente.get("accessProfile"):
+        return primeiro_cliente.get("accessProfile")
+    criado_por = t.get("createdBy")
+    if isinstance(criado_por, dict):
+        return criado_por.get("accessProfile")
+    return None
+
+
 def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
     rows = []
     for t in raw_tickets:
@@ -264,6 +278,7 @@ def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
             "equipe_responsavel": t.get("ownerTeam"),
             "criado_por": _person_name(t.get("createdBy")),
             "cliente": _cliente_do_ticket(t),
+            "perfil_acesso": _perfil_acesso(t),
             "data_abertura": t.get("createdDate"),
             "data_resolucao": t.get("resolvedIn"),
             "data_fechamento": t.get("closedIn"),
