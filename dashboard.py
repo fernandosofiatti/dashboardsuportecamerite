@@ -123,11 +123,30 @@ st.markdown(
     }
     [data-testid="stSidebar"] svg { fill: #29184E; }
 
-    /* Botões dos filtros (st.pills): deixamos sem cor forçada aqui de
-       propósito - o botão "aceso" (selecionado) já usa a primaryColor do
-       tema (definida em .streamlit/config.toml, a mesma roxa da marca),
-       e o Streamlit já escolhe automaticamente uma cor de texto legível
-       para cada estado. */
+    /* Pílulas de filtro (st.pills): o reset global do sidebar
+       (* { color: claro }) deixava o texto branco em cima do fundo claro das
+       pílulas apagadas - ilegível. Aqui forçamos texto ESCURO nas apagadas e
+       texto BRANCO sobre roxo nas acesas. Cobrimos vários nomes de testid
+       porque eles mudam entre versões do Streamlit. */
+    [data-testid="stSidebar"] button[data-testid*="pills" i],
+    [data-testid="stSidebar"] button[data-testid*="pills" i] p,
+    [data-testid="stSidebar"] button[data-testid*="pills" i] span,
+    [data-testid="stSidebar"] [data-testid="stPills"] button,
+    [data-testid="stSidebar"] [data-testid="stPills"] button p {
+        color: #29184E !important;
+    }
+    [data-testid="stSidebar"] button[data-testid*="pillsActive" i],
+    [data-testid="stSidebar"] button[data-testid*="pillsActive" i] p,
+    [data-testid="stSidebar"] button[data-testid*="pillsActive" i] span,
+    [data-testid="stSidebar"] [data-testid="stPills"] button[aria-checked="true"],
+    [data-testid="stSidebar"] [data-testid="stPills"] button[aria-checked="true"] p {
+        color: #ffffff !important;
+    }
+    [data-testid="stSidebar"] button[data-testid*="pillsActive" i],
+    [data-testid="stSidebar"] [data-testid="stPills"] button[aria-checked="true"] {
+        background-color: #7B48EA !important;
+        border-color: #7B48EA !important;
+    }
 
     [data-testid="stSidebar"] .stButton button {
         background-color: #7B48EA; color: white !important; border: none;
