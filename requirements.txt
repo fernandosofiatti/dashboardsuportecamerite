@@ -1,14 +1,16 @@
-requests
-pandas>=2.2,<3.0
-openpyxl
-# streamlit e starlette FIXOS: o Streamlit Cloud passou a puxar starlette 1.4.0,
-# que adicionou um argumento obrigatório (thread_minimum_size) e quebrou o
-# middleware de gzip do Streamlit ("Oh no. Error running app"). starlette < 1.4
-# mantém a compatibilidade. Presos ao par que comprovadamente funciona.
+# Todas as versões estão FIXAS de propósito. O Streamlit Community Cloud
+# reinstala as dependências a cada deploy e, quando elas ficam soltas, ele puxa
+# versões novas que já quebraram o app duas vezes:
+#   - starlette 1.4.0  -> erro de gzip ("Oh no. Error running app")
+#   - plotly novo      -> ValueError "Invalid value" ao montar gráficos de barra
+# Mantendo tudo preso ao conjunto testado, o ambiente fica estável e
+# reproduzível. Para atualizar algo, suba a versão de um pacote por vez e teste.
+requests==2.34.2
+pandas==2.3.3
+openpyxl==3.1.5
 streamlit==1.60.0
-starlette<1.4.0
-# plotly FIXO: versões novas quebraram a montagem de gráficos de barra
-# (ValueError "Invalid value" em apply_default_cascade). 6.9.0 é a que funciona.
+starlette==1.3.1
 plotly==6.9.0
-pg8000
-sqlalchemy>=2.0,<3.0
+narwhals==2.23.0
+pg8000==1.31.5
+sqlalchemy==2.0.51
