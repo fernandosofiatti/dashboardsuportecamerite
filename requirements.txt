@@ -7,6 +7,8 @@ openpyxl
 # mantém a compatibilidade. Presos ao par que comprovadamente funciona.
 streamlit==1.60.0
 starlette<1.4.0
-plotly
+# plotly FIXO: versões novas quebraram a montagem de gráficos de barra
+# (ValueError "Invalid value" em apply_default_cascade). 6.9.0 é a que funciona.
+plotly==6.9.0
 pg8000
 sqlalchemy>=2.0,<3.0
