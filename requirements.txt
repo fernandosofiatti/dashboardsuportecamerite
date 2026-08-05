@@ -1,7 +1,12 @@
 requests
 pandas>=2.2,<3.0
 openpyxl
-streamlit
+# streamlit e starlette FIXOS: o Streamlit Cloud passou a puxar starlette 1.4.0,
+# que adicionou um argumento obrigatório (thread_minimum_size) e quebrou o
+# middleware de gzip do Streamlit ("Oh no. Error running app"). starlette < 1.4
+# mantém a compatibilidade. Presos ao par que comprovadamente funciona.
+streamlit==1.60.0
+starlette<1.4.0
 plotly
 pg8000
 sqlalchemy>=2.0,<3.0
