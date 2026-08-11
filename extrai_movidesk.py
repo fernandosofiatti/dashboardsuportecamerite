@@ -310,6 +310,44 @@ def fetch_person_profiles(person_ids) -> dict:
     return perfis
 
 
+def fetch_all_company_profiles() -> dict:
+    """Busca de uma vez o accessProfile de TODAS as empresas (personType 2),
+    paginando a lista de /persons. Isso é muito mais rápido do que consultar
+    empresa por empresa: como a classificação do cliente (Franquia/Canais/...)
+    fica no perfil da EMPRESA, uma varredura paginada resolve quase todos os
+    ids de organização de uma só vez (poucas requisições).
+
+    Tem trava anti-loop (limite de páginas + avanço obrigatório do $skip).
+    Best-effort: se falhar, retorna o que conseguiu."""
+    perfis = {}
+    skip = 0
+    paginas = 0
+    MAX_PAGINAS = 500
+    try:
+        while paginas < MAX_PAGINAS:
+            page = api_get("/persons", {
+                "$select": "id,accessProfile",
+                "$filter": "personType eq 2",  # 2 = Empresa
+                "$top": PAGE_SIZE,
+                "$skip": skip,
+                "$orderby": "id",
+            })
+            if not isinstance(page, list) or not page:
+                break
+            for p in page:
+                pid = p.get("id")
+                if pid is not None:
+                    perfis[str(pid)] = p.get("accessProfile")
+            paginas += 1
+            if len(page) < PAGE_SIZE:
+                break
+            skip += PAGE_SIZE
+            _sleep_rate_limit()
+    except Exception as e:  # noqa: BLE001
+        print(f"  [!] Falha ao buscar perfis das empresas em lote: {e}")
+    return perfis
+
+
 def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
     rows = []
     for t in raw_tickets:
@@ -470,11 +508,24 @@ def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
         cache = db.read_person_profiles()
         faltando = [i for i in ids_solicitantes if i not in cache]
         print(f"\nPerfis de acesso: {len(ids_solicitantes)} solicitante(s) nesta rodada, "
-              f"{len(ids_solicitantes) - len(faltando)} já em cache, {len(faltando)} a buscar (/persons)...")
+              f"{len(ids_solicitantes) - len(faltando)} já em cache, {len(faltando)} a buscar...")
         if faltando:
-            novos = fetch_person_profiles(faltando)
-            db.upsert_person_profiles(novos)
-            cache.update(novos)
+            # Se falta bastante coisa (ex.: primeira carga), busca o perfil de
+            # TODAS as empresas de uma vez (paginado, poucas requisições) - bem
+            # mais rápido que consultar uma a uma. Depois, o que sobrar (pessoas
+            # sem empresa) é consultado individualmente.
+            if len(faltando) > 5:
+                print("  Buscando perfis de todas as empresas em lote (/persons personType=2)...")
+                empresas = fetch_all_company_profiles()
+                if empresas:
+                    db.upsert_person_profiles(empresas)
+                    cache.update(empresas)
+                    faltando = [i for i in ids_solicitantes if i not in cache]
+                    print(f"  -> {len(empresas)} empresas em cache; ainda faltam {len(faltando)}.")
+            if faltando:
+                novos = fetch_person_profiles(faltando)
+                db.upsert_person_profiles(novos)
+                cache.update(novos)
         df["perfil_acesso"] = df["perfil_acesso_id"].map(lambda i: cache.get(str(i)))
         print(f"  -> {df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
         df = df.drop(columns=["perfil_acesso_id"])
