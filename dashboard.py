@@ -541,7 +541,7 @@ with st.sidebar:
     st.header("📥 Dados")
     dias_input = st.number_input(
         "Buscar tickets dos últimos quantos dias?",
-        min_value=1, max_value=90, value=30, step=1,
+        min_value=1, max_value=90, value=5, step=1,
         help="O botão abaixo sempre busca tickets criados dentro desse período.",
     )
 
