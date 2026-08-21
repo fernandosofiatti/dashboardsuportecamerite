@@ -238,18 +238,31 @@ def clear_person_profiles():
 
 
 def upsert_person_profiles(mapping: dict):
-    """Grava/atualiza no cache os perfis recém-consultados."""
+    """Grava/atualiza no cache os perfis recém-consultados.
+
+    Grava em lotes com um único INSERT multi-linha por lote (em vez de um
+    INSERT por pessoa) - com centenas de empresas, um INSERT por linha vira
+    uma transação longa demais e o Postgres do Supabase cancela com erro
+    57014 "canceling statement due to statement timeout"."""
     if not mapping:
         return
     ensure_person_table()
+    items = [(str(pid), perfil) for pid, perfil in mapping.items()]
+    TAMANHO_LOTE = 500
     with get_engine().begin() as conn:
-        for pid, perfil in mapping.items():
+        for inicio in range(0, len(items), TAMANHO_LOTE):
+            lote = items[inicio:inicio + TAMANHO_LOTE]
+            valores_sql = ", ".join(f"(:id{i}, :perfil{i})" for i in range(len(lote)))
+            params = {}
+            for i, (pid, perfil) in enumerate(lote):
+                params[f"id{i}"] = pid
+                params[f"perfil{i}"] = perfil
             conn.execute(
                 text(
-                    f"INSERT INTO {PERSON_TABLE} (id, perfil_acesso) VALUES (:id, :perfil) "
+                    f"INSERT INTO {PERSON_TABLE} (id, perfil_acesso) VALUES {valores_sql} "
                     f"ON CONFLICT (id) DO UPDATE SET perfil_acesso = EXCLUDED.perfil_acesso"
                 ),
-                {"id": str(pid), "perfil": perfil},
+                params,
             )
 
 
