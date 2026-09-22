@@ -540,25 +540,40 @@ def atualizar_dados(full: bool, days: int = None):
 
 with st.sidebar:
     st.header("📥 Dados")
-    dias_input = st.number_input(
-        "Buscar tickets dos últimos quantos dias?",
-        min_value=1, max_value=90, value=5, step=1,
-        help="O botão abaixo sempre busca tickets criados dentro desse período.",
-    )
 
     if st.button("🔄 Atualizar dados do Movidesk", width="stretch"):
-        atualizar_dados(full=False, days=int(dias_input))
+        # Atualização incremental de verdade: busca tickets ALTERADOS desde a
+        # última sincronização (filtro por lastUpdate), não só os CRIADOS
+        # recentemente. Isso é essencial para pegar chamados antigos que
+        # mudaram de status agora (ex.: um chamado aberto há semanas que foi
+        # fechado hoje) - um filtro por data de criação nunca pegaria essa
+        # mudança, e o chamado ficaria desatualizado no nosso banco até
+        # alguém notar e usar a busca manual.
+        atualizar_dados(full=False, days=None)
         st.rerun()
 
     with st.expander("Opções avançadas"):
         st.caption(
-            "Carga completa: busca todo o histórico de tickets, não só o "
-            "período acima. Pode demorar bastante se houver muitos tickets."
+            "Carga completa: busca todo o histórico de tickets. Pode demorar "
+            "bastante se houver muitos tickets."
         )
         if st.button("Forçar carga completa (histórico inteiro)", width="stretch"):
             atualizar_dados(full=True)
             st.rerun()
 
+        st.caption(
+            "Carga rápida por data de criação: útil só na primeira vez ou "
+            "para testes - busca tickets CRIADOS nos últimos N dias, mas "
+            "ignora chamados mais antigos que mudaram de status. Prefira o "
+            "botão principal acima para o uso do dia a dia."
+        )
+        dias_input = st.number_input(
+            "Buscar tickets criados nos últimos quantos dias?",
+            min_value=1, max_value=90, value=5, step=1,
+        )
+        if st.button("Carga rápida por data de criação", width="stretch"):
+            atualizar_dados(full=False, days=int(dias_input))
+            st.rerun()
 
 # --------------------------------------------------------------------------
 # CARREGAMENTO DOS DADOS (do Supabase)
