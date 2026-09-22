@@ -417,6 +417,38 @@ def flatten_tickets(raw_tickets: list) -> pd.DataFrame:
     return df
 
 
+def fetch_single_ticket(ticket_id: str) -> pd.DataFrame:
+    """Busca UM chamado específico direto na API do Movidesk (dado ao vivo,
+    sem depender do que já está no Supabase) e devolve no mesmo formato usado
+    pelo resto do app (uma linha de flatten_tickets, já com perfil_acesso).
+
+    Usado pela tela de busca de chamado, para comparar o que está na API
+    "agora" com o que está gravado no nosso banco."""
+    raw = api_get(
+        "/tickets",
+        {
+            "id": str(ticket_id).strip(),
+            "$select": ",".join(SELECT_FIELDS),
+            "$expand": ",".join(EXPAND_FIELDS),
+        },
+    )
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not raw:
+        return pd.DataFrame()
+
+    df = flatten_tickets(raw)
+
+    pid = df.iloc[0].get("perfil_acesso_id")
+    if pid:
+        try:
+            df.loc[df.index[0], "perfil_acesso"] = _person_access_profile(str(pid))
+        except Exception as e:  # noqa: BLE001 (best-effort)
+            print(f"  [!] Falha ao buscar perfil de acesso: {e}")
+
+    return df.drop(columns=["perfil_acesso_id"], errors="ignore")
+
+
 # --------------------------------------------------------------------------
 # EXECUÇÃO PRINCIPAL
 # --------------------------------------------------------------------------

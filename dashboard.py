@@ -22,6 +22,7 @@ o navegador. Se quiser rodar manualmente:
 """
 
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -779,10 +780,10 @@ dcr = calcular_prazo(dff)
 # ABAS
 # --------------------------------------------------------------------------
 
-aba_geral, aba_equipe, aba_tempo, aba_causa, aba_detalhado = st.tabs(
+aba_geral, aba_equipe, aba_tempo, aba_causa, aba_busca, aba_detalhado = st.tabs(
     [
         "📌 Visão Geral", "👥 Equipe", "⏱️ Tempo & SLA",
-        "🎯 Causa Raiz & Prazo", "📋 Detalhado",
+        "🎯 Causa Raiz & Prazo", "🔍 Buscar Chamado", "📋 Detalhado",
     ]
 )
 
@@ -1584,7 +1585,120 @@ with aba_causa:
                 st.plotly_chart(fig, width="stretch")
 
 
-# --- Detalhado -------------------------------------------------------------------
+# --- Buscar Chamado -----------------------------------------------------------
+with aba_busca:
+    st.caption(
+        "Busca um chamado direto na API do Movidesk (dado ao vivo, agora) e "
+        "compara com o que está gravado no nosso banco (Supabase). Útil quando "
+        "um chamado mudou no Movidesk (ex.: foi fechado) mas ainda aparece "
+        "desatualizado aqui no dashboard."
+    )
+
+    col_busca, col_botao = st.columns([3, 1])
+    with col_busca:
+        numero_busca = st.text_input(
+            "Número do chamado", key="numero_busca_ticket",
+            placeholder="ex.: 67589",
+        )
+    with col_botao:
+        st.write("")
+        st.write("")
+        buscar_clicado = st.button("🔍 Buscar", width="stretch")
+
+    if buscar_clicado:
+        tid = numero_busca.strip()
+        if not tid:
+            st.session_state.pop("busca_ticket", None)
+            st.info("Informe o número do chamado.")
+        else:
+            try:
+                with st.spinner("Consultando a API do Movidesk..."):
+                    linha_api = movidesk.fetch_single_ticket(tid)
+                erro_api = None
+            except Exception as e:
+                linha_api = pd.DataFrame()
+                # Remove o token de acesso (vai na URL da API) da mensagem de erro
+                # antes de guardar - senão ele vazaria na tela para quem usa o app.
+                erro_api = re.sub(r"token=[^&\s]+", "token=***", str(e))
+            # Guardamos o resultado em session_state (em vez de só numa variável
+            # local) porque o botão "Ressincronizar" abaixo dispara um novo rerun
+            # do script inteiro - sem isso, "buscar_clicado" voltaria a False
+            # nesse rerun e o resultado da busca desapareceria antes de o botão
+            # de ressincronizar conseguir ser clicado.
+            st.session_state["busca_ticket"] = {"tid": tid, "linha_api": linha_api, "erro_api": erro_api}
+
+    resultado = st.session_state.get("busca_ticket")
+    if resultado:
+        tid = resultado["tid"]
+        linha_api = resultado["linha_api"]
+        if resultado["erro_api"]:
+            st.error(f"Erro ao consultar a API do Movidesk: {resultado['erro_api']}")
+
+        linha_local = df[df["id"].astype(str) == tid] if "id" in df.columns else pd.DataFrame()
+
+        if linha_api.empty and linha_local.empty:
+            st.warning(f"Chamado {tid} não encontrado nem na API nem no nosso banco.")
+        else:
+            campos_exibicao = [
+                ("protocolo", "Protocolo"), ("assunto", "Assunto"), ("status", "Status"),
+                ("status_base", "Status (base)"), ("categoria", "Categoria"),
+                ("urgencia", "Urgência"), ("justificativa", "Justificativa"),
+                ("responsavel", "Responsável"), ("equipe_responsavel", "Equipe responsável"),
+                ("cliente", "Cliente"), ("perfil_acesso", "Perfil de acesso"),
+                ("data_abertura", "Data de abertura"), ("data_resolucao", "Data de resolução"),
+                ("data_fechamento", "Data de fechamento"), ("ultima_atualizacao", "Última atualização"),
+            ]
+
+            api_row = linha_api.iloc[0] if not linha_api.empty else None
+            local_row = linha_local.iloc[0] if not linha_local.empty else None
+
+            linhas_tabela = []
+            algo_diferente = False
+            def _fmt(v):
+                # Datas com segundo igual mas nanossegundos diferentes (a API
+                # devolve mais casas decimais do que o Postgres guarda) não
+                # devem contar como "diferente" - arredondamos ao segundo.
+                if pd.isna(v):
+                    return ""
+                if isinstance(v, pd.Timestamp):
+                    return v.strftime("%d/%m/%Y %H:%M:%S")
+                return str(v)
+
+            for col, rotulo in campos_exibicao:
+                v_api = api_row.get(col) if api_row is not None else None
+                v_local = local_row.get(col) if local_row is not None else None
+                v_api_s = _fmt(v_api)
+                v_local_s = _fmt(v_local)
+                diferente = v_api_s != v_local_s and (v_api is not None or v_local is not None)
+                if diferente:
+                    algo_diferente = True
+                linhas_tabela.append({
+                    "Campo": rotulo,
+                    "No Movidesk (agora)": v_api_s or "—",
+                    "No nosso banco": v_local_s or "—",
+                    "Diferente?": "⚠️ Sim" if diferente else "",
+                })
+
+            if api_row is None:
+                st.warning(f"Chamado {tid} não foi encontrado na API do Movidesk (só existe no nosso banco).")
+            elif local_row is None:
+                st.info(f"Chamado {tid} ainda não está no nosso banco (só existe na API do Movidesk).")
+            elif algo_diferente:
+                st.warning("⚠️ Este chamado está desatualizado no nosso banco - veja as diferenças abaixo.")
+            else:
+                st.success("✅ Este chamado está com os mesmos dados no Movidesk e no nosso banco.")
+
+            st.dataframe(pd.DataFrame(linhas_tabela), width="stretch", hide_index=True)
+
+            if api_row is not None and (local_row is None or algo_diferente):
+                if st.button("🔄 Ressincronizar este chamado agora", key="ressync_ticket"):
+                    with st.spinner("Gravando no Supabase..."):
+                        db.upsert_tickets(linha_api)
+                    st.cache_data.clear()
+                    st.success("Chamado ressincronizado com sucesso!")
+                    st.rerun()
+
+# --- Detalhado -----------------------------------------------------------------
 with aba_detalhado:
     st.dataframe(dff, width="stretch", height=450)
     csv = dff.to_csv(index=False).encode("utf-8-sig")
