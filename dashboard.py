@@ -513,19 +513,28 @@ def resumo_prazo(d: pd.DataFrame):
 # --------------------------------------------------------------------------
 
 def atualizar_dados(full: bool, days: int = None):
-    if days is not None:
-        label = f"Buscando tickets criados nos últimos {days} dias..."
-    elif full:
-        label = (
-            "Fazendo carga completa (todo o histórico)... isso pode levar bastante tempo "
-            "se houver muitos tickets (o Movidesk limita 10 requisições por minuto)."
-        )
-    else:
-        label = "Buscando só os tickets novos/alterados desde a última atualização..."
+    barra = st.progress(0, text="Iniciando...")
+    # Enquanto a etapa de busca de tickets está rodando, o total de páginas
+    # não é conhecido de antemão (a API não informa a contagem) - nesses
+    # casos on_progress chama com fracao=None, e aqui simulamos um avanço
+    # lento (até 45%) só para a barra não ficar parada, sem fingir uma
+    # conclusão que ainda não aconteceu.
+    estado = {"fake": 0.0}
 
-    with st.spinner(label):
-        df_novo = movidesk.run_extraction(full=full, days=days)
+    def on_progress(msg, frac):
+        if frac is None:
+            estado["fake"] = min(estado["fake"] + 0.04, 0.45)
+            frac = estado["fake"]
+        else:
+            estado["fake"] = frac
+        barra.progress(frac, text=msg)
+
+    try:
+        df_novo = movidesk.run_extraction(full=full, days=days, on_progress=on_progress)
+        barra.progress(1.0, text="Atualizando backup em Excel...")
         movidesk.export_excel_backup()
+    finally:
+        barra.empty()
 
     st.cache_data.clear()
     if df_novo.empty:

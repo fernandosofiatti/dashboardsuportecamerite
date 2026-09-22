@@ -163,16 +163,21 @@ def api_get(endpoint: str, params: dict) -> list:
     raise RuntimeError(f"Falha ao consultar {endpoint} após múltiplas tentativas.")
 
 
-def fetch_all_tickets(endpoint: str, filter_expr: str = None) -> list:
+def fetch_all_tickets(endpoint: str, filter_expr: str = None, on_progress=None) -> list:
     """
     Pagina um endpoint de tickets (/tickets ou /tickets/past) até não
     haver mais registros, respeitando o limite de requisições por minuto.
 
     Se filter_expr for informado, é enviado como $filter (sintaxe OData),
     por exemplo: "lastUpdate gt 2026-07-01T00:00:00.00z"
-    """
+
+    on_progress(mensagem, fracao), se informado, é chamado a cada página -
+    o total de páginas não é conhecido de antemão (a API não informa a
+    contagem total), então "fracao" é só uma estimativa que cresce a cada
+    página, para a barra de progresso na tela não ficar parada."""
     all_tickets = []
     skip = 0
+    pagina = 0
 
     while True:
         params = {
@@ -186,6 +191,8 @@ def fetch_all_tickets(endpoint: str, filter_expr: str = None) -> list:
             params["$filter"] = filter_expr
 
         print(f"  Buscando {endpoint}  (skip={skip})...")
+        if on_progress:
+            on_progress(f"Buscando tickets em {endpoint}... {len(all_tickets)} encontrados até agora", None)
         page = api_get(endpoint, params)
 
         if not page:
@@ -193,6 +200,10 @@ def fetch_all_tickets(endpoint: str, filter_expr: str = None) -> list:
 
         all_tickets.extend(page)
         skip += PAGE_SIZE
+        pagina += 1
+
+        if on_progress:
+            on_progress(f"Buscando tickets em {endpoint}... {len(all_tickets)} encontrados até agora", None)
 
         if len(page) < PAGE_SIZE:
             break
@@ -286,7 +297,7 @@ def _person_access_profile(pid: str):
     return None
 
 
-def fetch_person_profiles(person_ids) -> dict:
+def fetch_person_profiles(person_ids, on_progress=None) -> dict:
     """Monta um mapa {id (cod. ref.) -> accessProfile} dos solicitantes dos
     tickets desta rodada. O "Perfil de acesso" (ex.: 'Canais', 'Administradores')
     é um atributo da pessoa e não vem no ticket, então cruzamos o
@@ -305,12 +316,14 @@ def fetch_person_profiles(person_ids) -> dict:
             perfis[pid] = _person_access_profile(pid)
         except Exception as e:  # noqa: BLE001 (best-effort por pessoa)
             print(f"  [!] Falha ao buscar perfil da pessoa {pid}: {e}")
+        if on_progress:
+            on_progress(f"Perfis de acesso: {pos + 1}/{len(ids)}", (pos + 1) / len(ids))
         if pos < len(ids) - 1:
             _sleep_rate_limit()
     return perfis
 
 
-def fetch_all_company_profiles() -> dict:
+def fetch_all_company_profiles(on_progress=None) -> dict:
     """Busca de uma vez o accessProfile de TODAS as empresas (personType 2),
     paginando a lista de /persons. Isso é muito mais rápido do que consultar
     empresa por empresa: como a classificação do cliente (Franquia/Canais/...)
@@ -339,6 +352,8 @@ def fetch_all_company_profiles() -> dict:
                 if pid is not None:
                     perfis[str(pid)] = p.get("accessProfile")
             paginas += 1
+            if on_progress:
+                on_progress(f"Perfis de empresas: {len(perfis)} encontrados até agora", None)
             if len(page) < PAGE_SIZE:
                 break
             skip += PAGE_SIZE
@@ -467,7 +482,7 @@ def _dedupe(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
+def run_extraction(full: bool = False, days: int = None, on_progress=None) -> pd.DataFrame:
     """
     Busca os tickets do Movidesk e grava no Supabase.
 
@@ -481,9 +496,18 @@ def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
     - Caso contrário: faz uma atualização incremental, buscando só os
       tickets alterados desde a última sincronização. Bem mais rápido.
 
+    on_progress(mensagem, fracao), se informado, é chamado repetidamente
+    durante a extração para alimentar uma barra de progresso na tela -
+    "fracao" vai de 0 a 1 quando o total da etapa é conhecido (ex.: perfis
+    a buscar, lotes a gravar) ou None quando não é (paginação de tickets).
+
     Retorna o DataFrame com os tickets buscados NESTA rodada (não é a base
     inteira quando a atualização é incremental/parcial).
     """
+    def progresso(msg, frac=None):
+        print(f"  {msg}")
+        if on_progress:
+            on_progress(msg, frac)
     if MOVIDESK_TOKEN in (None, "", "COLE_SEU_TOKEN_AQUI"):
         raise RuntimeError(
             "Configure a variável de ambiente MOVIDESK_TOKEN antes de rodar "
@@ -494,42 +518,41 @@ def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
     if days is not None:
         since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         filtro = f"createdDate gt {since.strftime('%Y-%m-%dT%H:%M:%S.00z')}"
-        print(f"Carga rápida: buscando tickets criados nos últimos {days} dias "
-              f"(desde {since.isoformat()} UTC)...")
-        all_raw = fetch_all_tickets("/tickets", filter_expr=filtro)
-        print(f"  -> {len(all_raw)} tickets encontrados.")
+        progresso(f"Carga rápida: buscando tickets criados nos últimos {days} dias...")
+        all_raw = fetch_all_tickets("/tickets", filter_expr=filtro, on_progress=progresso)
+        progresso(f"{len(all_raw)} tickets encontrados.")
     else:
         last_sync = None if full else db.get_last_sync()
 
         if last_sync is None:
-            print("Carga completa: buscando todo o histórico (pode demorar bastante "
-                  "se houver muitos tickets - o Movidesk limita 10 requisições/minuto).")
+            progresso("Carga completa: buscando todo o histórico (pode demorar bastante "
+                      "se houver muitos tickets - o Movidesk limita 10 requisições/minuto).")
 
-            print("\n[1/2] Buscando histórico completo (/tickets/past)...")
-            past_tickets = fetch_all_tickets("/tickets/past")
-            print(f"  -> {len(past_tickets)} tickets encontrados no histórico.")
+            progresso("[1/2] Buscando histórico completo (/tickets/past)...")
+            past_tickets = fetch_all_tickets("/tickets/past", on_progress=progresso)
+            progresso(f"{len(past_tickets)} tickets encontrados no histórico.")
 
             _sleep_rate_limit()
 
-            print("\n[2/2] Buscando tickets recentes (/tickets)...")
-            recent_tickets = fetch_all_tickets("/tickets")
-            print(f"  -> {len(recent_tickets)} tickets encontrados recentes.")
+            progresso("[2/2] Buscando tickets recentes (/tickets)...")
+            recent_tickets = fetch_all_tickets("/tickets", on_progress=progresso)
+            progresso(f"{len(recent_tickets)} tickets encontrados recentes.")
 
             all_raw = past_tickets + recent_tickets
         else:
             # Margem de segurança de 1h para não perder tickets no limite exato
             since = last_sync - timedelta(hours=1)
             filtro = f"lastUpdate gt {since.strftime('%Y-%m-%dT%H:%M:%S.00z')}"
-            print(f"Atualização incremental: buscando tickets alterados desde {since.isoformat()} UTC...")
-            all_raw = fetch_all_tickets("/tickets", filter_expr=filtro)
-            print(f"  -> {len(all_raw)} tickets novos/alterados encontrados.")
+            progresso("Atualização incremental: buscando tickets alterados desde a última sincronização...")
+            all_raw = fetch_all_tickets("/tickets", filter_expr=filtro, on_progress=progresso)
+            progresso(f"{len(all_raw)} tickets novos/alterados encontrados.")
 
     if not all_raw:
-        print("\nNenhum ticket novo ou alterado. Base do Supabase já está em dia.")
+        progresso("Nenhum ticket novo ou alterado. Base do Supabase já está em dia.", 1.0)
         return pd.DataFrame()
 
     df = _dedupe(flatten_tickets(all_raw))
-    print(f"\nTotal de tickets únicos nesta rodada: {len(df)}")
+    progresso(f"Total de tickets únicos nesta rodada: {len(df)}")
 
     # Enriquece com o Perfil de acesso (accessProfile), buscado na API de
     # Pessoas e cruzado pelo id do solicitante - esse dado não vem no ticket.
@@ -539,32 +562,38 @@ def run_extraction(full: bool = False, days: int = None) -> pd.DataFrame:
         # próximas atualizações (mesmos clientes) ficam rápidas.
         cache = db.read_person_profiles()
         faltando = [i for i in ids_solicitantes if i not in cache]
-        print(f"\nPerfis de acesso: {len(ids_solicitantes)} solicitante(s) nesta rodada, "
-              f"{len(ids_solicitantes) - len(faltando)} já em cache, {len(faltando)} a buscar...")
+        progresso(f"Perfis de acesso: {len(ids_solicitantes)} solicitante(s) nesta rodada, "
+                  f"{len(ids_solicitantes) - len(faltando)} já em cache, {len(faltando)} a buscar...")
         if faltando:
             # Se falta bastante coisa (ex.: primeira carga), busca o perfil de
             # TODAS as empresas de uma vez (paginado, poucas requisições) - bem
             # mais rápido que consultar uma a uma. Depois, o que sobrar (pessoas
             # sem empresa) é consultado individualmente.
             if len(faltando) > 5:
-                print("  Buscando perfis de todas as empresas em lote (/persons personType=2)...")
-                empresas = fetch_all_company_profiles()
+                progresso("Buscando perfis de todas as empresas em lote (/persons personType=2)...")
+                empresas = fetch_all_company_profiles(on_progress=lambda m, f: progresso(m, None))
                 if empresas:
                     db.upsert_person_profiles(empresas)
                     cache.update(empresas)
                     faltando = [i for i in ids_solicitantes if i not in cache]
-                    print(f"  -> {len(empresas)} empresas em cache; ainda faltam {len(faltando)}.")
+                    progresso(f"{len(empresas)} empresas em cache; ainda faltam {len(faltando)}.")
             if faltando:
-                novos = fetch_person_profiles(faltando)
+                # Reescala a fração 0-1 de fetch_person_profiles para a faixa
+                # 50%-85% da barra de progresso geral desta extração.
+                novos = fetch_person_profiles(
+                    faltando, on_progress=lambda m, f: progresso(m, 0.5 + 0.35 * f)
+                )
                 db.upsert_person_profiles(novos)
                 cache.update(novos)
         df["perfil_acesso"] = df["perfil_acesso_id"].map(lambda i: cache.get(str(i)))
-        print(f"  -> {df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
+        progresso(f"{df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
         df = df.drop(columns=["perfil_acesso_id"])
 
-    print("\nEnviando para o Supabase...")
-    enviados = db.upsert_tickets(df)
-    print(f"  -> {enviados} tickets gravados/atualizados no Supabase.")
+    progresso("Enviando para o Supabase...", 0.85)
+    enviados = db.upsert_tickets(df, on_progress=lambda i, total: progresso(
+        f"Gravando no Supabase: {i}/{total} tickets", 0.85 + 0.15 * (i / total) if total else 0.85
+    ))
+    progresso(f"{enviados} tickets gravados/atualizados no Supabase.", 1.0)
 
     return df
 

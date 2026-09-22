@@ -298,9 +298,12 @@ def _to_pyval(v, coluna: str = None):
     return v
 
 
-def upsert_tickets(df: pd.DataFrame) -> int:
+def upsert_tickets(df: pd.DataFrame, on_progress=None) -> int:
     """Insere/atualiza os tickets no Supabase (upsert pelo campo id).
     Retorna a quantidade de linhas enviadas.
+
+    on_progress(gravados, total), se informado, é chamado após cada lote
+    gravado - usado para alimentar a barra de progresso na tela.
 
     Usa o construtor de INSERT do SQLAlchemy (em vez de SQL "cru" em texto)
     justamente para que cada parâmetro vá tipado - isso evita o erro do
@@ -336,8 +339,9 @@ def upsert_tickets(df: pd.DataFrame) -> int:
     # descartados).
     TAMANHO_LOTE = 500
     total_gravado = 0
+    total_registros = len(records)
     with get_engine().begin() as conn:
-        for inicio in range(0, len(records), TAMANHO_LOTE):
+        for inicio in range(0, total_registros, TAMANHO_LOTE):
             lote = records[inicio:inicio + TAMANHO_LOTE]
             stmt = pg_insert(table).values(lote)
             stmt = stmt.on_conflict_do_update(
@@ -346,6 +350,8 @@ def upsert_tickets(df: pd.DataFrame) -> int:
             )
             conn.execute(stmt)
             total_gravado += len(lote)
+            if on_progress:
+                on_progress(total_gravado, total_registros)
 
     return total_gravado
 
