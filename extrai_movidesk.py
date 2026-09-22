@@ -285,23 +285,36 @@ def _escape_odata(valor: str) -> str:
     return str(valor).replace("'", "''")
 
 
-def _person_access_profile(pid: str):
+def _person_access_profile(pid: str) -> dict:
     """Busca UMA pessoa por id na API de Pessoas (GET /persons?id=X) - é o
-    método documentado para obter uma pessoa específica - e devolve o
-    accessProfile (Perfil de acesso). Retorna None se não encontrar."""
+    método documentado para obter uma pessoa específica - e devolve
+    {"perfil": accessProfile, "organizacao": nome da empresa vinculada}.
+
+    A busca de tickets EM LOTE (fetch_all_tickets) nunca traz a organização
+    do solicitante dentro de clients[].organization - isso só vem numa busca
+    de ticket avulso (fetch_single_ticket) ou, como aqui, direto da pessoa via
+    o campo "relationships" (que o Movidesk usa pra listar a(s) empresa(s)
+    vinculadas à pessoa). É por isso que buscamos o perfil pessoa a pessoa
+    mesmo sendo mais lento: é a única fonte confiável desse dado numa
+    sincronização em lote."""
     data = api_get("/persons", {"id": pid})
-    if isinstance(data, dict):
-        return data.get("accessProfile")
-    if isinstance(data, list) and data and isinstance(data[0], dict):
-        return data[0].get("accessProfile")
-    return None
+    pessoa = data[0] if isinstance(data, list) and data else data
+    if not isinstance(pessoa, dict):
+        return {"perfil": None, "organizacao": None}
+    relacionamentos = pessoa.get("relationships")
+    organizacao = (
+        relacionamentos[0].get("name")
+        if isinstance(relacionamentos, list) and relacionamentos and isinstance(relacionamentos[0], dict)
+        else None
+    )
+    return {"perfil": pessoa.get("accessProfile"), "organizacao": organizacao}
 
 
 def fetch_person_profiles(person_ids, on_progress=None) -> dict:
-    """Monta um mapa {id (cod. ref.) -> accessProfile} dos solicitantes dos
-    tickets desta rodada. O "Perfil de acesso" (ex.: 'Canais', 'Administradores')
-    é um atributo da pessoa e não vem no ticket, então cruzamos o
-    ticket.clients[n].id com a API de Pessoas (GET /persons?id=X).
+    """Monta um mapa {id (cod. ref.) -> {"perfil":..., "organizacao":...}} dos
+    solicitantes dos tickets desta rodada. O "Perfil de acesso" (ex.: 'Canais',
+    'Administradores') é um atributo da pessoa e não vem no ticket, então
+    cruzamos o ticket.clients[n].id com a API de Pessoas (GET /persons?id=X).
 
     Consulta uma pessoa por vez (método documentado) e só os ids únicos, para
     não repetir a mesma pessoa. Best-effort: qualquer id que falhe é ignorado e
@@ -324,11 +337,12 @@ def fetch_person_profiles(person_ids, on_progress=None) -> dict:
 
 
 def fetch_all_company_profiles(on_progress=None) -> dict:
-    """Busca de uma vez o accessProfile de TODAS as empresas (personType 2),
-    paginando a lista de /persons. Isso é muito mais rápido do que consultar
-    empresa por empresa: como a classificação do cliente (Franquia/Canais/...)
-    fica no perfil da EMPRESA, uma varredura paginada resolve quase todos os
-    ids de organização de uma só vez (poucas requisições).
+    """Busca de uma vez o accessProfile (e o próprio nome, usado como
+    "organizacao") de TODAS as empresas (personType 2), paginando a lista de
+    /persons. Isso é muito mais rápido do que consultar empresa por empresa:
+    como a classificação do cliente (Franquia/Canais/...) fica no perfil da
+    EMPRESA, uma varredura paginada resolve quase todos os ids de organização
+    de uma só vez (poucas requisições).
 
     Tem trava anti-loop (limite de páginas + avanço obrigatório do $skip).
     Best-effort: se falhar, retorna o que conseguiu."""
@@ -339,7 +353,7 @@ def fetch_all_company_profiles(on_progress=None) -> dict:
     try:
         while paginas < MAX_PAGINAS:
             page = api_get("/persons", {
-                "$select": "id,accessProfile",
+                "$select": "id,accessProfile,businessName",
                 "$filter": "personType eq 2",  # 2 = Empresa
                 "$top": PAGE_SIZE,
                 "$skip": skip,
@@ -350,7 +364,7 @@ def fetch_all_company_profiles(on_progress=None) -> dict:
             for p in page:
                 pid = p.get("id")
                 if pid is not None:
-                    perfis[str(pid)] = p.get("accessProfile")
+                    perfis[str(pid)] = {"perfil": p.get("accessProfile"), "organizacao": p.get("businessName")}
             paginas += 1
             if on_progress:
                 on_progress(f"Perfis de empresas: {len(perfis)} encontrados até agora", None)
@@ -457,7 +471,7 @@ def fetch_single_ticket(ticket_id: str) -> pd.DataFrame:
     pid = df.iloc[0].get("perfil_acesso_id")
     if pid:
         try:
-            df.loc[df.index[0], "perfil_acesso"] = _person_access_profile(str(pid))
+            df.loc[df.index[0], "perfil_acesso"] = _person_access_profile(str(pid))["perfil"]
         except Exception as e:  # noqa: BLE001 (best-effort)
             print(f"  [!] Falha ao buscar perfil de acesso: {e}")
 
@@ -545,7 +559,22 @@ def run_extraction(full: bool = False, days: int = None, on_progress=None) -> pd
             filtro = f"lastUpdate gt {since.strftime('%Y-%m-%dT%H:%M:%S.00z')}"
             progresso("Atualização incremental: buscando tickets alterados desde a última sincronização...")
             all_raw = fetch_all_tickets("/tickets", filter_expr=filtro, on_progress=progresso)
-            progresso(f"{len(all_raw)} tickets novos/alterados encontrados.")
+            progresso(f"{len(all_raw)} tickets novos/alterados encontrados (por lastUpdate).")
+
+            # Rede de segurança: tickets recém-criados às vezes têm dados que
+            # o próprio Movidesk ainda está terminando de vincular no momento
+            # da criação (ex.: a organização do solicitante) SEM que isso
+            # bata no campo lastUpdate do ticket - ou seja, um ticket que
+            # acabamos de gravar com dado incompleto nunca mais seria
+            # reconsultado pelo filtro por lastUpdate acima, mesmo clicando
+            # em "Atualizar" repetidas vezes. Por isso, sempre reconsultamos
+            # também os tickets CRIADOS nas últimas 48h, não só os alterados.
+            since_criacao = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=48)
+            filtro_criacao = f"createdDate gt {since_criacao.strftime('%Y-%m-%dT%H:%M:%S.00z')}"
+            progresso("Rede de segurança: reconsultando tickets criados nas últimas 48h...")
+            recentes = fetch_all_tickets("/tickets", filter_expr=filtro_criacao, on_progress=progresso)
+            progresso(f"{len(recentes)} tickets recém-criados reconsultados.")
+            all_raw = all_raw + recentes
 
     if not all_raw:
         progresso("Nenhum ticket novo ou alterado. Base do Supabase já está em dia.", 1.0)
@@ -558,12 +587,15 @@ def run_extraction(full: bool = False, days: int = None, on_progress=None) -> pd
     # Pessoas e cruzado pelo id do solicitante - esse dado não vem no ticket.
     if "perfil_acesso_id" in df.columns:
         ids_solicitantes = [str(i) for i in df["perfil_acesso_id"].dropna().unique().tolist()]
-        # Usa o cache: só busca no /persons quem ainda não conhecemos. Assim as
-        # próximas atualizações (mesmos clientes) ficam rápidas.
+        # Usa o cache: só busca no /persons quem ainda não conhecemos OU quem
+        # está "stale" (cache mais velho que PERFIL_TTL_DIAS, ou de antes de
+        # existir essa validade) - sem isso, uma pessoa que mudasse de perfil
+        # no Movidesk (ex.: "Canais" -> "Franquia") ficaria com o perfil
+        # antigo no nosso banco pra sempre.
         cache = db.read_person_profiles()
-        faltando = [i for i in ids_solicitantes if i not in cache]
+        faltando = [i for i in ids_solicitantes if i not in cache or cache[i]["stale"]]
         progresso(f"Perfis de acesso: {len(ids_solicitantes)} solicitante(s) nesta rodada, "
-                  f"{len(ids_solicitantes) - len(faltando)} já em cache, {len(faltando)} a buscar...")
+                  f"{len(ids_solicitantes) - len(faltando)} já em cache, {len(faltando)} a buscar/revalidar...")
         if faltando:
             # Se falta bastante coisa (ex.: primeira carga), busca o perfil de
             # TODAS as empresas de uma vez (paginado, poucas requisições) - bem
@@ -574,8 +606,8 @@ def run_extraction(full: bool = False, days: int = None, on_progress=None) -> pd
                 empresas = fetch_all_company_profiles(on_progress=lambda m, f: progresso(m, None))
                 if empresas:
                     db.upsert_person_profiles(empresas)
-                    cache.update(empresas)
-                    faltando = [i for i in ids_solicitantes if i not in cache]
+                    cache.update({k: {**v, "stale": False} for k, v in empresas.items()})
+                    faltando = [i for i in ids_solicitantes if i not in cache or cache[i]["stale"]]
                     progresso(f"{len(empresas)} empresas em cache; ainda faltam {len(faltando)}.")
             if faltando:
                 # Reescala a fração 0-1 de fetch_person_profiles para a faixa
@@ -584,9 +616,23 @@ def run_extraction(full: bool = False, days: int = None, on_progress=None) -> pd
                     faltando, on_progress=lambda m, f: progresso(m, 0.5 + 0.35 * f)
                 )
                 db.upsert_person_profiles(novos)
-                cache.update(novos)
-        df["perfil_acesso"] = df["perfil_acesso_id"].map(lambda i: cache.get(str(i)))
+                cache.update({k: {**v, "stale": False} for k, v in novos.items()})
+
+        df["perfil_acesso"] = df["perfil_acesso_id"].map(lambda i: cache.get(str(i), {}).get("perfil"))
         progresso(f"{df['perfil_acesso'].notna().sum()} tickets com perfil de acesso preenchido.")
+
+        # A organização do solicitante, obtida junto com o perfil de acesso
+        # (via /persons), é mais confiável do que o "cliente" calculado a
+        # partir do próprio ticket - a busca de tickets EM LOTE não traz o
+        # campo clients[].organization (só a busca de um ticket avulso traz),
+        # então sem isso o "cliente" ficaria com o nome da PESSOA que abriu o
+        # chamado em vez do nome da empresa dela, sempre que a sincronização
+        # roda em lote (ou seja, sempre, no uso normal do botão "Atualizar").
+        organizacoes = df["perfil_acesso_id"].map(
+            lambda i: cache.get(str(i), {}).get("organizacao") if pd.notna(i) else None
+        )
+        df["cliente"] = organizacoes.where(organizacoes.notna(), df["cliente"])
+
         df = df.drop(columns=["perfil_acesso_id"])
 
     progresso("Enviando para o Supabase...", 0.85)

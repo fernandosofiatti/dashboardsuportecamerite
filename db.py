@@ -32,6 +32,7 @@ Configure a variável de ambiente SUPABASE_DB_URL antes de rodar:
 """
 
 import os
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from sqlalchemy import (
@@ -206,7 +207,18 @@ def _adicionar_colunas_faltantes(engine):
 # reconsultar sempre os mesmos solicitantes a cada atualização, guardamos o que
 # já foi consultado nesta tabela. Assim, as próximas cargas só buscam quem é
 # novo, e ficam rápidas.
+#
+# Também guardamos a "organizacao" (nome da empresa vinculada à pessoa) aqui -
+# a API do Movidesk NÃO devolve isso na busca de tickets em LOTE (só quando se
+# busca um ticket específico por id), então essa é a única forma confiável de
+# saber a empresa do solicitante durante a sincronização normal.
+#
+# "atualizado_em" existe para o cache não ficar desatualizado pra sempre: se o
+# perfil de uma pessoa mudar no Movidesk (ex.: reclassificada de "Canais" para
+# "Franquia"), sem isso o nosso cache nunca reconsultaria essa pessoa de novo.
+# Reconsultamos qualquer entrada com mais de PERFIL_TTL_DIAS dias.
 PERSON_TABLE = "movidesk_person_profiles"
+PERFIL_TTL_DIAS = 30
 
 
 def ensure_person_table():
@@ -215,15 +227,34 @@ def ensure_person_table():
             f"CREATE TABLE IF NOT EXISTS {PERSON_TABLE} "
             f"(id text PRIMARY KEY, perfil_acesso text)"
         ))
+        # Colunas adicionadas depois da criação original da tabela (idempotente).
+        conn.execute(text(f"ALTER TABLE {PERSON_TABLE} ADD COLUMN IF NOT EXISTS organizacao text"))
+        conn.execute(text(
+            f"ALTER TABLE {PERSON_TABLE} ADD COLUMN IF NOT EXISTS atualizado_em timestamp"
+        ))
 
 
 def read_person_profiles() -> dict:
-    """Devolve o mapa {id -> perfil_acesso} já conhecido (cache)."""
+    """Devolve o mapa {id -> {"perfil": ..., "organizacao": ..., "stale": bool}}
+    já conhecido (cache). "stale"=True quando a entrada nunca foi marcada com
+    data (cache antigo, de antes desta coluna existir) ou passou do prazo de
+    validade (PERFIL_TTL_DIAS) - quem chama deve tratar isso como "preciso
+    reconsultar", mesmo já tendo um valor guardado."""
     try:
         ensure_person_table()
         with get_engine().connect() as conn:
-            rows = conn.execute(text(f"SELECT id, perfil_acesso FROM {PERSON_TABLE}"))
-            return {str(r[0]): r[1] for r in rows}
+            rows = conn.execute(
+                text(f"SELECT id, perfil_acesso, organizacao, atualizado_em FROM {PERSON_TABLE}")
+            )
+            limite = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=PERFIL_TTL_DIAS)
+            return {
+                str(r[0]): {
+                    "perfil": r[1],
+                    "organizacao": r[2],
+                    "stale": r[3] is None or r[3] < limite,
+                }
+                for r in rows
+            }
     except Exception as e:  # noqa: BLE001
         print(f"  [!] Não foi possível ler o cache de perfis: {e}")
         return {}
@@ -240,6 +271,10 @@ def clear_person_profiles():
 def upsert_person_profiles(mapping: dict):
     """Grava/atualiza no cache os perfis recém-consultados.
 
+    mapping: {id -> perfil_acesso} (string) OU {id -> {"perfil": ..., "organizacao": ...}}
+    - aceita as duas formas para não quebrar quem só tem o perfil (ex.: cache
+    de empresas em lote, que não tem organização própria).
+
     Grava em lotes com um único INSERT multi-linha por lote (em vez de um
     INSERT por pessoa) - com centenas de empresas, um INSERT por linha vira
     uma transação longa demais e o Postgres do Supabase cancela com erro
@@ -247,20 +282,33 @@ def upsert_person_profiles(mapping: dict):
     if not mapping:
         return
     ensure_person_table()
-    items = [(str(pid), perfil) for pid, perfil in mapping.items()]
+
+    def _normaliza(v):
+        if isinstance(v, dict):
+            return v.get("perfil"), v.get("organizacao")
+        return v, None
+
+    agora = datetime.now(timezone.utc).replace(tzinfo=None)
+    items = [(str(pid), *_normaliza(v)) for pid, v in mapping.items()]
     TAMANHO_LOTE = 500
     with get_engine().begin() as conn:
         for inicio in range(0, len(items), TAMANHO_LOTE):
             lote = items[inicio:inicio + TAMANHO_LOTE]
-            valores_sql = ", ".join(f"(:id{i}, :perfil{i})" for i in range(len(lote)))
+            valores_sql = ", ".join(f"(:id{i}, :perfil{i}, :org{i}, :ts{i})" for i in range(len(lote)))
             params = {}
-            for i, (pid, perfil) in enumerate(lote):
+            for i, (pid, perfil, organizacao) in enumerate(lote):
                 params[f"id{i}"] = pid
                 params[f"perfil{i}"] = perfil
+                params[f"org{i}"] = organizacao
+                params[f"ts{i}"] = agora
             conn.execute(
                 text(
-                    f"INSERT INTO {PERSON_TABLE} (id, perfil_acesso) VALUES {valores_sql} "
-                    f"ON CONFLICT (id) DO UPDATE SET perfil_acesso = EXCLUDED.perfil_acesso"
+                    f"INSERT INTO {PERSON_TABLE} (id, perfil_acesso, organizacao, atualizado_em) "
+                    f"VALUES {valores_sql} "
+                    f"ON CONFLICT (id) DO UPDATE SET "
+                    f"perfil_acesso = EXCLUDED.perfil_acesso, "
+                    f"organizacao = EXCLUDED.organizacao, "
+                    f"atualizado_em = EXCLUDED.atualizado_em"
                 ),
                 params,
             )
